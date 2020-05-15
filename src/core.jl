@@ -131,6 +131,8 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
     message_json = JSON.json(message)
 
     put!(x.out_msg_queue, message_json)
+
+    return nothing
 end
 
 function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
