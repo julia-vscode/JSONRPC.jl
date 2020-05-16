@@ -1,43 +1,56 @@
-abstract type AbstractRequestParams{RESPONSE_T} end
-abstract type AbstractNotificationParams end
+abstract type AbstractMessageType end
 
-function parse_response end
-
-function send(x::JSONRPCEndpoint, method::AbstractString, params::AbstractRequestParams{RESPONSE_T}) where RESPONSE_T
-    res = send_request(x, method, params)
-
-    return parse_response(RESPONSE_T, res)
+struct NotificationType{TPARAM} <: AbstractMessageType
+    method::String
+    dict2param::Function
 end
 
-function send(x::JSONRPCEndpoint, method::AbstractString, params::AbstractNotificationParams)
-    send_notification(x, method, params)
+struct RequestType{TPARAM,TR} <: AbstractMessageType
+    method::String
+    dict2param::Function
+    dict2response::Function
+end
+
+get_param_type(::NotificationType{TPARAM}) where {TPARAM} = TPARAM
+get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
+
+function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM, TR}
+    res = send_request(x, request.method, params)
+
+    return request.dict2response(res)::TR
+end
+
+function send(x::JSONRPCEndpoint, notification::NotificationType{TPARAM}, params::TPARAM) where TPARAM
+    send_notification(x, notification.method, params)
+end
+
+struct Handler
+    message_type::AbstractMessageType
+    func::Function
 end
 
 struct MsgDispatcher
-    _handlers
+    _handlers::Dict{String,Handler}
 
     function MsgDispatcher()
-        new(Dict())
+        new(Dict{String,Handler}())
     end
 end
 
-struct Handler{T<:Function, PARAM_T<:Union{Nothing,AbstractRequestParams,AbstractNotificationParams}}
-    f::T
-end
-
-function add_handler!(dispatcher::MsgDispatcher, name::AbstractString, handler::Function, param_type::Union{Nothing,AbstractRequestParams,AbstractNotificationParams}=nothing)
-    dispatcher._handlers[name] = (handler = handler, param_type = param_type)
+function add_handler!(dispatcher::MsgDispatcher, message_type::AbstractMessageType, func::Function)
+    dispatcher._handlers[message_type.method] = Handler(message_type, func)
 end
 
 function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
     method_name = msg["method"]
-    if haskey(dispatcher._handlers, method_name)
-        handler = dispatcher._handlers[method_name]
+    handler = get(dispatcher._handlers, method_name, nothing)
+    if handler!==nothing
         try
-            params = handler.parser===nothing ? msg["params"] : handler.param_type(msg["params"])
-            res = handler.handler(x, params)
+            params = handler.data2param(msg["params"])
 
-            if haskey(msg, "id")
+            res = handler.func(x, params)
+
+            if handler.message_type isa RequestType
                 send_success_response(x, msg, res)
             end
         catch err
