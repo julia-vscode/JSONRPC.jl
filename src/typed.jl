@@ -2,13 +2,18 @@ abstract type AbstractMessageType end
 
 struct NotificationType{TPARAM} <: AbstractMessageType
     method::String
-    dict2param::Function
 end
 
 struct RequestType{TPARAM,TR} <: AbstractMessageType
     method::String
-    dict2param::Function
-    dict2response::Function
+end
+
+function NotificationType(method::AbstractString, ::Type{TPARAM}) where TPARAM
+    return NotificationType{TPARAM}(method)
+end
+
+function RequestType(method::AbstractString, ::Type{TPARAM}, ::Type{TR}) where {TPARAM,TR}
+    return RequestType{TPARAM,TR}(method)
 end
 
 get_param_type(::NotificationType{TPARAM}) where {TPARAM} = TPARAM
@@ -17,7 +22,7 @@ get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
 function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM, TR}
     res = send_request(x, request.method, params)
 
-    return request.dict2response(res)::TR
+    return res::TR
 end
 
 function send(x::JSONRPCEndpoint, notification::NotificationType{TPARAM}, params::TPARAM) where TPARAM
@@ -37,7 +42,7 @@ struct MsgDispatcher
     end
 end
 
-function add_handler!(dispatcher::MsgDispatcher, message_type::AbstractMessageType, func::Function)
+function Base.setindex!(dispatcher::MsgDispatcher, func::Function, message_type::AbstractMessageType)
     dispatcher._handlers[message_type.method] = Handler(message_type, func)
 end
 
@@ -46,7 +51,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
     handler = get(dispatcher._handlers, method_name, nothing)
     if handler!==nothing
         try
-            params = handler.data2param(msg["params"])
+            params = get_param_type(handler.message_type)(msg["params"])
 
             res = handler.func(x, params)
 
