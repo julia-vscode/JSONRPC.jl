@@ -19,7 +19,7 @@ end
 get_param_type(::NotificationType{TPARAM}) where {TPARAM} = TPARAM
 get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
 
-function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM, TR}
+function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM,TR}
     res = send_request(x, request.method, params)
 
     return res::TR
@@ -49,7 +49,7 @@ end
 function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
     method_name = msg["method"]
     handler = get(dispatcher._handlers, method_name, nothing)
-    if handler!==nothing
+    if handler !== nothing
         try
             params = get_param_type(handler.message_type)(msg["params"])
 
