@@ -49,7 +49,7 @@ end
 function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
     method_name = msg["method"]
     handler = get(dispatcher._handlers, method_name, nothing)
-    if handler !== nothing        
+    if handler !== nothing
         try
             param_type = get_param_type(handler.message_type)
             params = param_type === Nothing ? nothing : param_type(msg["params"])
