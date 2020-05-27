@@ -22,7 +22,9 @@ get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
 function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM,TR}
     res = send_request(x, request.method, params)
 
-    return res::TR
+    typed_res = res===nothing ? nothing : TR(res)
+
+    return typed_res::TR
 end
 
 function send(x::JSONRPCEndpoint, notification::NotificationType{TPARAM}, params::TPARAM) where TPARAM
