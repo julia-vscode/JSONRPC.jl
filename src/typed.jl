@@ -23,7 +23,10 @@ function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARA
     res = send_request(x, request.method, params)
 
     typed_res = if TR <: Nothing
-        nothing
+        # send_request must have returned nothing in this case, we pass this on
+        # so that we get an error in the typecast at the end of the method
+        # if that is not the case.
+        res
     elseif TR <: AbstractArray
         map(i->eltype(TR)(i), res)
     else
