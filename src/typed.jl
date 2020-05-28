@@ -22,7 +22,13 @@ get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
 function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM,TR}
     res = send_request(x, request.method, params)
 
-    typed_res = res===nothing ? nothing : TR(res)
+    typed_res = if TR <: Nothing
+        nothing
+    elseif TR <: AbstractArray
+        map(i->eltype(TR)(i), res)
+    else
+        TR(res)
+    end
 
     return typed_res::TR
 end
