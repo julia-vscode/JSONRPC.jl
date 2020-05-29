@@ -63,7 +63,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
             end
         catch err
             if err isa JSONRPCError
-                send_error_response(x, msg, err.code, err.message, err.data)
+                send_error_response(x, msg, err.code, err.msg, err.data)
             else
                 rethrow(err)
             end
