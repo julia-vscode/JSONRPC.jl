@@ -21,20 +21,16 @@ get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
 
 function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM,TR}
     res = send_request(x, request.method, params)
-
-    typed_res = if TR <: Nothing
-        # send_request must have returned nothing in this case, we pass this on
-        # so that we get an error in the typecast at the end of the method
-        # if that is not the case.
-        res
-    elseif TR <: AbstractArray
-        map(i->eltype(TR)(i), res)
-    else
-        TR(res)
-    end
-
-    return typed_res::TR
+    return typed_res(res, TR)::TR
 end
+
+# `send_request` must have returned nothing in this case, we pass this on
+# so that we get an error in the typecast at the end of `send`
+# if that is not the case.
+typed_res(res, TR::Type{Nothing}) = res
+typed_res(res, TR::Type{<:T}) where {T <: AbstractArray{Any}} = T(res)
+typed_res(res, TR::Type{<:AbstractArray{T}}) where T = T.(res)
+typed_res(res, TR::Type) = TR(res)
 
 function send(x::JSONRPCEndpoint, notification::NotificationType{TPARAM}, params::TPARAM) where TPARAM
     send_notification(x, notification.method, params)
