@@ -57,20 +57,16 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
     method_name = msg["method"]
     handler = get(dispatcher._handlers, method_name, nothing)
     if handler !== nothing
-        try
-            param_type = get_param_type(handler.message_type)
-            params = param_type === Nothing ? nothing : param_type(msg["params"])
+        param_type = get_param_type(handler.message_type)
+        params = param_type === Nothing ? nothing : param_type(msg["params"])
 
-            res = handler.func(x, params)
+        res = handler.func(x, params)
 
-            if handler.message_type isa RequestType
-                send_success_response(x, msg, res)
-            end
-        catch err
-            if err isa JSONRPCError
-                send_error_response(x, msg, err.code, err.message, err.data)
+        if handler.message_type isa RequestType
+            if res isa JSONRPCError
+                send_error_response(x, msg, res.code, res.msg, res.data)
             else
-                rethrow(err)
+                send_success_response(x, msg, res)
             end
         end
     else
