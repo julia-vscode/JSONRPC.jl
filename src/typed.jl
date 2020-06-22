@@ -70,6 +70,6 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
             end
         end
     else
-        error("Unknown method.")
+        error("Unknown method $method_name.")
     end
 end
