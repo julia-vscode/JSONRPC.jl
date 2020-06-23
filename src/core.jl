@@ -94,7 +94,7 @@ function Base.run(x::JSONRPCEndpoint)
             write_transport_layer(x.pipe_out, msg)
         end
     catch err
-        if err isa JSONRPCShutdownException || ( err isa Base.IOError && x.status == :closed)
+        if err isa JSONRPCShutdownException
         else
             bt = catch_backtrace()
             if x.err_handler !== nothing
