@@ -241,11 +241,3 @@ function Base.close(endpoint::JSONRPCEndpoint)
     # the socket, which we don't want to do
     # fetch(endpoint.read_task)
 end
-
-function Base.flush(endpoint::JSONRPCEndpoint)
-    endpoint.status == :running || error("Endpoint is not running.")
-
-    while isready(endpoint.out_msg_queue)
-        yield(endpoint.write_task)
-    end
-end
