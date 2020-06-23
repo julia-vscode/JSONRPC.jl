@@ -41,11 +41,12 @@ struct Handler
     func::Function
 end
 
-struct MsgDispatcher
+mutable struct MsgDispatcher
     _handlers::Dict{String,Handler}
+    _currentlyHandlingMsg::Bool
 
     function MsgDispatcher()
-        new(Dict{String,Handler}())
+        new(Dict{String,Handler}(), false)
     end
 end
 
@@ -54,22 +55,29 @@ function Base.setindex!(dispatcher::MsgDispatcher, func::Function, message_type:
 end
 
 function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
-    method_name = msg["method"]
-    handler = get(dispatcher._handlers, method_name, nothing)
-    if handler !== nothing
-        param_type = get_param_type(handler.message_type)
-        params = param_type === Nothing ? nothing : param_type(msg["params"])
+    dispatcher._currentlyHandlingMsg = true
+    try
+        method_name = msg["method"]
+        handler = get(dispatcher._handlers, method_name, nothing)
+        if handler !== nothing
+            param_type = get_param_type(handler.message_type)
+            params = param_type === Nothing ? nothing : param_type(msg["params"])
 
-        res = handler.func(x, params)
+            res = handler.func(x, params)
 
-        if handler.message_type isa RequestType
-            if res isa JSONRPCError
-                send_error_response(x, msg, res.code, res.msg, res.data)
-            else
-                send_success_response(x, msg, res)
+            if handler.message_type isa RequestType
+                if res isa JSONRPCError
+                    send_error_response(x, msg, res.code, res.msg, res.data)
+                else
+                    send_success_response(x, msg, res)
+                end
             end
+        else
+            error("Unknown method $method_name.")
         end
-    else
-        error("Unknown method $method_name.")
+    finally
+        dispatcher._currentlyHandlingMsg = false
     end
 end
+
+is_currently_handling_msg(d::MsgDispatcher) = d._currentlyHandlingMsg

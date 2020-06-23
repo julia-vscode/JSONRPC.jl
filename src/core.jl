@@ -231,6 +231,10 @@ struct JSONRPCShutdownException <: Exception end
 function Base.close(endpoint::JSONRPCEndpoint)
     endpoint.status == :running || error("Endpoint is not running.")
 
+    while isready(endpoint.out_msg_queue)
+        yield()
+    end
+
     endpoint.status = :closed
     close(endpoint.in_msg_queue, JSONRPCShutdownException())
     close(endpoint.out_msg_queue, JSONRPCShutdownException())
