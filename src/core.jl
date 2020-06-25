@@ -41,7 +41,7 @@ function Base.showerror(io::IO, ex::JSONRPCError)
     end
 end
 
-struct JSONRPCEndpoint
+mutable struct JSONRPCEndpoint
     pipe_in
     pipe_out
 
@@ -52,8 +52,13 @@ struct JSONRPCEndpoint
 
     err_handler::Union{Nothing,Function}
 
-    function JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing)
-        return new(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler)
+    status::Symbol
+
+    read_task::Union{Nothing,Task}
+    write_task::Union{Nothing,Task}
+
+    function JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing)
+        return new(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
     end
 end
 
@@ -68,7 +73,7 @@ function read_transport_layer(stream)
     header_dict = Dict{String,String}()
     line = chomp(readline(stream))
     # Check whether the socket was closed
-    if line == ""        
+    if line == ""
         return nothing
     end
     while length(line) > 0
@@ -82,31 +87,44 @@ function read_transport_layer(stream)
 end
 
 function Base.run(x::JSONRPCEndpoint)
-    @async try
+    x.status == :idle || error("Endpoint is not idle.")
+
+    x.write_task = @async try
         for msg in x.out_msg_queue
             write_transport_layer(x.pipe_out, msg)
         end
     catch err
-        bt = catch_backtrace()
-        if x.err_handler !== nothing
-            x.err_handler(err, bt)
+        if err isa JSONRPCShutdownException
         else
-            Base.display_error(stderr, err, bt)
+            bt = catch_backtrace()
+            if x.err_handler !== nothing
+                x.err_handler(err, bt)
+            else
+                Base.display_error(stderr, err, bt)
+            end
         end
     end
 
-    @async try
+    x.read_task = @async try
         while true
             message = read_transport_layer(x.pipe_in)
 
-            if message === nothing
+            if message === nothing || x.status == :closed
                 break
             end
 
             message_dict = JSON.parse(message)
 
             if haskey(message_dict, "method")
-                put!(x.in_msg_queue, message_dict)
+                try
+                    put!(x.in_msg_queue, message_dict)
+                catch err
+                    if err isa JSONRPCShutdownException
+                        break
+                    else
+                        rethrow(err)
+                    end
+                end
             else
                 # This must be a response
                 id_of_request = message_dict["id"]
@@ -123,9 +141,13 @@ function Base.run(x::JSONRPCEndpoint)
             Base.display_error(stderr, err, bt)
         end
     end
+
+    x.status = :running
 end
 
 function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
+    x.status == :running || error("Endpoint is not running.")
+
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
 
     message_json = JSON.json(message)
@@ -136,6 +158,8 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
 end
 
 function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
+    x.status == :running || error("Endpoint is not running.")
+
     id = string(UUIDs.uuid4())
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params, "id" => id)
 
@@ -161,12 +185,30 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
 end
 
 function get_next_message(endpoint::JSONRPCEndpoint)
+    endpoint.status == :running || error("Endpoint is not running.")
+
     msg = take!(endpoint.in_msg_queue)
 
     return msg
 end
 
+function Base.iterate(endpoint::JSONRPCEndpoint, state=nothing)
+    endpoint.status == :running || error("Endpoint is not running.")
+
+    try
+        return take!(endpoint.in_msg_queue), nothing
+    catch err
+        if err isa JSONRPCShutdownException
+            return nothing
+        else
+            rethrow(err)
+        end
+    end
+end
+
 function send_success_response(endpoint, original_request, result)
+    endpoint.status == :running || error("Endpoint is not running.")
+
     response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "result" => result)
 
     response_json = JSON.json(response)
@@ -175,9 +217,31 @@ function send_success_response(endpoint, original_request, result)
 end
 
 function send_error_response(endpoint, original_request, code, message, data)
+    endpoint.status == :running || error("Endpoint is not running.")
+
     response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "error" => Dict("code" => code, "message" => message, "data" => data))
 
     response_json = JSON.json(response)
 
     put!(endpoint.out_msg_queue, response_json)
+end
+
+struct JSONRPCShutdownException <: Exception end
+
+function Base.close(endpoint::JSONRPCEndpoint)
+    endpoint.status == :running || error("Endpoint is not running.")
+
+    while isready(endpoint.out_msg_queue)
+        yield()
+    end
+
+    endpoint.status = :closed
+    close(endpoint.in_msg_queue, JSONRPCShutdownException())
+    close(endpoint.out_msg_queue, JSONRPCShutdownException())
+
+    fetch(endpoint.write_task)
+    # TODO we would also like to close the read Task
+    # But unclear how to do that without also closing
+    # the socket, which we don't want to do
+    # fetch(endpoint.read_task)
 end
