@@ -57,7 +57,7 @@ mutable struct JSONRPCEndpoint
     read_task::Union{Nothing,Task}
     write_task::Union{Nothing,Task}
 
-    function JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing)
+    function JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing)
         return new(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
     end
 end
@@ -192,7 +192,7 @@ function get_next_message(endpoint::JSONRPCEndpoint)
     return msg
 end
 
-function Base.iterate(endpoint::JSONRPCEndpoint, state=nothing)
+function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
     endpoint.status == :running || error("Endpoint is not running.")
 
     try
