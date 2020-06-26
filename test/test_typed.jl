@@ -9,6 +9,7 @@
     end
 
     request1_type = JSONRPC.RequestType("request1", Foo, String)
+    request2_type = JSONRPC.RequestType("request2", Nothing, String)
     notify1_type = JSONRPC.NotificationType("notify1", String)
 
     global g_var = ""
@@ -22,7 +23,11 @@
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        msg_dispatcher[request1_type] = (conn, params)->params.fieldA == 1 ? "YES" : "NO"
+        msg_dispatcher[request1_type] = (conn, params)-> begin
+            @test JSONRPC.is_currently_handling_msg(msg_dispatcher)
+            params.fieldA == 1 ? "YES" : "NO"
+        end
+        msg_dispatcher[request2_type] = (conn, params)-> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
         msg_dispatcher[notify1_type] = (conn, params)->g_var = params
 
         run(conn)
@@ -45,6 +50,8 @@
 
     @test res == "YES"
     @test g_var == "TEST"
+
+    @test_throws JSONRPC.JSONRPCError(-32600, "Our message", nothing) JSONRPC.send(conn2, request2_type, nothing)
 
     close(conn2)
     close(sock2)

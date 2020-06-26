@@ -13,9 +13,13 @@ end
 
 @dict_readable struct Foo2 <: Outbound
     fieldA::Union{Nothing,Int}
+    fieldB::Vector{Int}
 end
 
+Base.:(==)(a::Foo2,b::Foo2) = a.fieldA==b.fieldA && a.fieldB==b.fieldB
+
 @testset "JSONRPC" begin
+    include("test_core.jl")
     include("test_interface_def.jl")
     include("test_typed.jl")
 
