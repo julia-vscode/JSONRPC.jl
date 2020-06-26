@@ -94,14 +94,11 @@ function Base.run(x::JSONRPCEndpoint)
             write_transport_layer(x.pipe_out, msg)
         end
     catch err
-        if err isa JSONRPCShutdownException
+        bt = catch_backtrace()
+        if x.err_handler !== nothing
+            x.err_handler(err, bt)
         else
-            bt = catch_backtrace()
-            if x.err_handler !== nothing
-                x.err_handler(err, bt)
-            else
-                Base.display_error(stderr, err, bt)
-            end
+            Base.display_error(stderr, err, bt)
         end
     end
 
@@ -119,7 +116,7 @@ function Base.run(x::JSONRPCEndpoint)
                 try
                     put!(x.in_msg_queue, message_dict)
                 catch err
-                    if err isa JSONRPCShutdownException
+                    if err isa InvalidStateException
                         break
                     else
                         rethrow(err)
@@ -198,7 +195,7 @@ function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
     try
         return take!(endpoint.in_msg_queue), nothing
     catch err
-        if err isa JSONRPCShutdownException
+        if err isa InvalidStateException
             return nothing
         else
             rethrow(err)
@@ -226,8 +223,6 @@ function send_error_response(endpoint, original_request, code, message, data)
     put!(endpoint.out_msg_queue, response_json)
 end
 
-struct JSONRPCShutdownException <: Exception end
-
 function Base.close(endpoint::JSONRPCEndpoint)
     endpoint.status == :running || error("Endpoint is not running.")
 
@@ -236,8 +231,8 @@ function Base.close(endpoint::JSONRPCEndpoint)
     end
 
     endpoint.status = :closed
-    close(endpoint.in_msg_queue, JSONRPCShutdownException())
-    close(endpoint.out_msg_queue, JSONRPCShutdownException())
+    close(endpoint.in_msg_queue)
+    close(endpoint.out_msg_queue)
 
     fetch(endpoint.write_task)
     # TODO we would also like to close the read Task
