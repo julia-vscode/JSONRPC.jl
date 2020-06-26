@@ -13,7 +13,7 @@ notify1_type = JSONRPC.NotificationType("notify1", String)
 
 global g_var = ""
 
-server_is_up = Base.Event()
+server_is_up = Base.Condition()
 
 server_task = @async begin
     server = listen(global_socket_name)
