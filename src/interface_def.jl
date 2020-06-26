@@ -25,7 +25,7 @@ function field_type(field::Expr, typename::String)
             return field.args[2].args[2] == :Missing ? field.args[2].args[3] : field.args[2].args[2]
         else
             # We return Any for now, which will lead to no type conversion
-            return Any
+            return :Any
         end
     else
         return field.args[2]
