@@ -11,6 +11,10 @@ using Sockets
     fieldD::Union{String,Missing}
 end
 
+@dict_readable struct Foo2 <: Outbound
+    fieldA::Union{Nothing,Int}
+end
+
 @testset "JSONRPC" begin
     include("test_interface_def.jl")
     include("test_typed.jl")
