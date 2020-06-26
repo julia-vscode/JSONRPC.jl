@@ -46,10 +46,10 @@ res = JSONRPC.send(conn2, request1_type, Foo(fieldA=1, fieldB="FOO"))
 @test res=="YES"
 @test g_var=="TEST"
 
-close(conn2)
+VERSION >= v"1.1" && close(conn2)
 close(sock2)
-close(conn)
+VERSION >= v"1.1" && close(conn)
 
-fetch(server_task)
+VERSION >= v"1.1" && fetch(server_task)
 
 end
