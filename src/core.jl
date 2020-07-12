@@ -143,7 +143,7 @@ function Base.run(x::JSONRPCEndpoint)
 end
 
 function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
-    x.status == :running || error("Endpoint is not running, the current state is $(x.status).")
+    check_endpoint_running(x)
 
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
 
@@ -155,7 +155,7 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
 end
 
 function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
-    x.status == :running || error("Endpoint is not running, the current state is $(x.status).")
+    check_endpoint_running(x)
 
     id = string(UUIDs.uuid4())
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params, "id" => id)
@@ -182,7 +182,7 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
 end
 
 function get_next_message(endpoint::JSONRPCEndpoint)
-    endpoint.status == :running || error("Endpoint is not running, the current state is $(endpoint.status).")
+    check_endpoint_running(endpoint)
 
     msg = take!(endpoint.in_msg_queue)
 
@@ -190,7 +190,7 @@ function get_next_message(endpoint::JSONRPCEndpoint)
 end
 
 function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
-    endpoint.status == :running || error("Endpoint is not running, the current state is $(endpoint.status).")
+    check_endpoint_running(endpoint)
 
     try
         return take!(endpoint.in_msg_queue), nothing
@@ -204,7 +204,7 @@ function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
 end
 
 function send_success_response(endpoint, original_request, result)
-    endpoint.status == :running || error("Endpoint is not running, the current state is $(endpoint.status).")
+    check_endpoint_running(endpoint)
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "result" => result)
 
@@ -214,7 +214,7 @@ function send_success_response(endpoint, original_request, result)
 end
 
 function send_error_response(endpoint, original_request, code, message, data)
-    endpoint.status == :running || error("Endpoint is not running, the current state is $(endpoint.status).")
+    check_endpoint_running(endpoint)
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "error" => Dict("code" => code, "message" => message, "data" => data))
 
@@ -224,7 +224,7 @@ function send_error_response(endpoint, original_request, code, message, data)
 end
 
 function Base.close(endpoint::JSONRPCEndpoint)
-    endpoint.status == :running || error("Endpoint is not running, the current state is $(endpoint.status).")
+    check_endpoint_running(endpoint)
 
     while isready(endpoint.out_msg_queue)
         yield()
@@ -239,4 +239,11 @@ function Base.close(endpoint::JSONRPCEndpoint)
     # But unclear how to do that without also closing
     # the socket, which we don't want to do
     # fetch(endpoint.read_task)
+end
+
+function check_endpoint_running(endpoint)
+    status = endpoint.status
+    if status !== :running
+        error("Endpoint is not running, the current state is $(status).")
+    end
 end
