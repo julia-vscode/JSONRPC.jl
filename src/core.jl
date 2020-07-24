@@ -41,9 +41,9 @@ function Base.showerror(io::IO, ex::JSONRPCError)
     end
 end
 
-mutable struct JSONRPCEndpoint
-    pipe_in
-    pipe_out
+mutable struct JSONRPCEndpoint{IOIn<:IO, IOOut<:IO}
+    pipe_in::IOIn
+    pipe_out::IOOut
 
     out_msg_queue::Channel{Any}
     in_msg_queue::Channel{Any}
@@ -56,11 +56,10 @@ mutable struct JSONRPCEndpoint
 
     read_task::Union{Nothing,Task}
     write_task::Union{Nothing,Task}
-
-    function JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing)
-        return new(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
-    end
 end
+
+JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
+    JSONRPCEndpoint(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
 
 function write_transport_layer(stream, response)
     response_utf8 = transcode(UInt8, response)
