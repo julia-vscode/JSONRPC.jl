@@ -41,7 +41,7 @@ function Base.showerror(io::IO, ex::JSONRPCError)
     end
 end
 
-mutable struct JSONRPCEndpoint{IOIn<:IO, IOOut<:IO}
+mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
     pipe_in::IOIn
     pipe_out::IOOut
 
