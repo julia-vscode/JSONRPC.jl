@@ -16,7 +16,7 @@ end
 function field_allows_missing(field::Expr)
     field.head == :(::) && field.args[2] isa Expr &&
     field.args[2].head == :curly && field.args[2].args[1] == :Union &&
-    any(i->i == :Missing, field.args[2].args)
+    any(i -> i == :Missing, field.args[2].args)
 end
 
 function field_type(field::Expr, typename::String)
@@ -42,7 +42,7 @@ end
 
 macro dict_readable(arg)
     tname = arg.args[2] isa Expr ? arg.args[2].args[1] : arg.args[2]
-    count_real_fields = count(field->!(field isa LineNumberNode), arg.args[3].args)
+    count_real_fields = count(field -> !(field isa LineNumberNode), arg.args[3].args)
     ex = quote
         $((arg))
 
