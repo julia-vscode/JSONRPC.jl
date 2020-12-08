@@ -223,11 +223,7 @@ function send_error_response(endpoint, original_request, code, message, data)
 end
 
 function Base.close(endpoint::JSONRPCEndpoint)
-    check_dead_endpoint!(endpoint)
-
-    while isready(endpoint.out_msg_queue)
-        yield()
-    end
+    flush(endpoint)  
 
     endpoint.status = :closed
     close(endpoint.in_msg_queue)
@@ -238,6 +234,14 @@ function Base.close(endpoint::JSONRPCEndpoint)
     # But unclear how to do that without also closing
     # the socket, which we don't want to do
     # fetch(endpoint.read_task)
+end
+
+function Base.flush(endpoint::JSONRPCEndpoint)
+    check_dead_endpoint!(endpoint)
+
+    while isready(endpoint.out_msg_queue)
+        yield()
+    end
 end
 
 function check_dead_endpoint!(endpoint)
