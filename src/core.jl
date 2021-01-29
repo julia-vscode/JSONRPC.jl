@@ -90,7 +90,11 @@ function Base.run(x::JSONRPCEndpoint)
 
     x.write_task = @async try
         for msg in x.out_msg_queue
-            write_transport_layer(x.pipe_out, msg)
+            if isopen(x.pipe_out)
+                write_transport_layer(x.pipe_out, msg)
+            else
+                break
+            end
         end
     catch err
         bt = catch_backtrace()
@@ -223,7 +227,7 @@ function send_error_response(endpoint, original_request, code, message, data)
 end
 
 function Base.close(endpoint::JSONRPCEndpoint)
-    flush(endpoint)  
+    flush(endpoint)
 
     endpoint.status = :closed
     close(endpoint.in_msg_queue)
