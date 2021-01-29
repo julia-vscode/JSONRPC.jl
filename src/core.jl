@@ -93,6 +93,7 @@ function Base.run(x::JSONRPCEndpoint)
             if isopen(x.pipe_out)
                 write_transport_layer(x.pipe_out, msg)
             else
+                # TODO Reconsider at some point whether this should be treated as an error.
                 break
             end
         end
