@@ -1,7 +1,7 @@
 name = "JSONRPC"
 uuid = "b9b8584e-8fd3-41f9-ad0c-7255d428e418"
 authors = ["David Anthoff <anthoff@berkeley.edu>"]
-version = "1.3.0"
+version = "1.3.1-DEV"
 
 [deps]
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
