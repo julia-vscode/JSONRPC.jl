@@ -58,7 +58,7 @@ mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
     write_task::Union{Nothing,Task}
 end
 
-JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing) =
+JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
     JSONRPCEndpoint(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
 
 function write_transport_layer(stream, response)
@@ -84,6 +84,8 @@ function read_transport_layer(stream)
     message_str = String(read(stream, message_length))
     return message_str
 end
+
+Base.isopen(x::JSONRPCEndpoint) = x.status != :closed && isopen(x.pipe_in) && isopen(x.pipe_out)
 
 function Base.run(x::JSONRPCEndpoint)
     x.status == :idle || error("Endpoint is not idle.")
@@ -193,7 +195,7 @@ function get_next_message(endpoint::JSONRPCEndpoint)
     return msg
 end
 
-function Base.iterate(endpoint::JSONRPCEndpoint, state=nothing)
+function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
     check_dead_endpoint!(endpoint)
 
     try
