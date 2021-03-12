@@ -23,12 +23,12 @@
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        msg_dispatcher[request1_type] = (conn, params)->begin
+        msg_dispatcher[request1_type] = (conn, params) -> begin
             @test JSONRPC.is_currently_handling_msg(msg_dispatcher)
             params.fieldA == 1 ? "YES" : "NO"
         end
-        msg_dispatcher[request2_type] = (conn, params)->JSONRPC.JSONRPCError(-32600, "Our message", nothing)
-        msg_dispatcher[notify1_type] = (conn, params)->g_var = params
+        msg_dispatcher[request2_type] = (conn, params) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
+        msg_dispatcher[notify1_type] = (conn, params) -> g_var = params
 
         run(conn)
 
@@ -46,7 +46,7 @@
 
     JSONRPC.send(conn2, notify1_type, "TEST")
 
-    res = JSONRPC.send(conn2, request1_type, Foo(fieldA = 1, fieldB = "FOO"))
+    res = JSONRPC.send(conn2, request1_type, Foo(fieldA=1, fieldB="FOO"))
 
     @test res == "YES"
     @test g_var == "TEST"

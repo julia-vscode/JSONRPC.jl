@@ -62,7 +62,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
         handler = get(dispatcher._handlers, method_name, nothing)
         if handler !== nothing
             param_type = get_param_type(handler.message_type)
-            params = param_type === Nothing ? nothing : param_type(msg["params"])
+            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
 
             res = handler.func(x, params)
 

@@ -41,9 +41,9 @@ function Base.showerror(io::IO, ex::JSONRPCError)
     end
 end
 
-mutable struct JSONRPCEndpoint
-    pipe_in
-    pipe_out
+mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
+    pipe_in::IOIn
+    pipe_out::IOOut
 
     out_msg_queue::Channel{Any}
     in_msg_queue::Channel{Any}
@@ -56,11 +56,10 @@ mutable struct JSONRPCEndpoint
 
     read_task::Union{Nothing,Task}
     write_task::Union{Nothing,Task}
-
-    function JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing)
-        return new(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
-    end
 end
+
+JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
+    JSONRPCEndpoint(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
 
 function write_transport_layer(stream, response)
     response_utf8 = transcode(UInt8, response)
@@ -86,12 +85,19 @@ function read_transport_layer(stream)
     return message_str
 end
 
+Base.isopen(x::JSONRPCEndpoint) = x.status != :closed && isopen(x.pipe_in) && isopen(x.pipe_out)
+
 function Base.run(x::JSONRPCEndpoint)
     x.status == :idle || error("Endpoint is not idle.")
 
     x.write_task = @async try
         for msg in x.out_msg_queue
-            write_transport_layer(x.pipe_out, msg)
+            if isopen(x.pipe_out)
+                write_transport_layer(x.pipe_out, msg)
+            else
+                # TODO Reconsider at some point whether this should be treated as an error.
+                break
+            end
         end
     catch err
         bt = catch_backtrace()
@@ -143,7 +149,7 @@ function Base.run(x::JSONRPCEndpoint)
 end
 
 function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
-    x.status == :running || error("Endpoint is not running.")
+    check_dead_endpoint!(x)
 
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
 
@@ -155,7 +161,7 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
 end
 
 function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
-    x.status == :running || error("Endpoint is not running.")
+    check_dead_endpoint!(x)
 
     id = string(UUIDs.uuid4())
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params, "id" => id)
@@ -182,7 +188,7 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
 end
 
 function get_next_message(endpoint::JSONRPCEndpoint)
-    endpoint.status == :running || error("Endpoint is not running.")
+    check_dead_endpoint!(endpoint)
 
     msg = take!(endpoint.in_msg_queue)
 
@@ -190,7 +196,7 @@ function get_next_message(endpoint::JSONRPCEndpoint)
 end
 
 function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
-    endpoint.status == :running || error("Endpoint is not running.")
+    check_dead_endpoint!(endpoint)
 
     try
         return take!(endpoint.in_msg_queue), nothing
@@ -204,7 +210,7 @@ function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
 end
 
 function send_success_response(endpoint, original_request, result)
-    endpoint.status == :running || error("Endpoint is not running.")
+    check_dead_endpoint!(endpoint)
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "result" => result)
 
@@ -214,7 +220,7 @@ function send_success_response(endpoint, original_request, result)
 end
 
 function send_error_response(endpoint, original_request, code, message, data)
-    endpoint.status == :running || error("Endpoint is not running.")
+    check_dead_endpoint!(endpoint)
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "error" => Dict("code" => code, "message" => message, "data" => data))
 
@@ -224,11 +230,7 @@ function send_error_response(endpoint, original_request, code, message, data)
 end
 
 function Base.close(endpoint::JSONRPCEndpoint)
-    endpoint.status == :running || error("Endpoint is not running.")
-
-    while isready(endpoint.out_msg_queue)
-        yield()
-    end
+    flush(endpoint)
 
     endpoint.status = :closed
     close(endpoint.in_msg_queue)
@@ -239,4 +241,18 @@ function Base.close(endpoint::JSONRPCEndpoint)
     # But unclear how to do that without also closing
     # the socket, which we don't want to do
     # fetch(endpoint.read_task)
+end
+
+function Base.flush(endpoint::JSONRPCEndpoint)
+    check_dead_endpoint!(endpoint)
+
+    while isready(endpoint.out_msg_queue)
+        yield()
+    end
+end
+
+function check_dead_endpoint!(endpoint)
+    status = endpoint.status
+    status === :running && return
+    error("Endpoint is not running, the current state is $(status).")
 end
