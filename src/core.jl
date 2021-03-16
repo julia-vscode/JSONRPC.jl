@@ -106,6 +106,8 @@ function Base.run(x::JSONRPCEndpoint)
         else
             Base.display_error(stderr, err, bt)
         end
+    finally
+        close(x.out_msg_queue)
     end
 
     x.read_task = @async try
@@ -143,6 +145,8 @@ function Base.run(x::JSONRPCEndpoint)
         else
             Base.display_error(stderr, err, bt)
         end
+    finally
+        close(x.in_msg_queue)
     end
 
     x.status = :running
@@ -233,8 +237,8 @@ function Base.close(endpoint::JSONRPCEndpoint)
     flush(endpoint)
 
     endpoint.status = :closed
-    close(endpoint.in_msg_queue)
-    close(endpoint.out_msg_queue)
+    isopen(endpoint.in_msg_queue) && close(endpoint.in_msg_queue)
+    isopen(endpoint.out_msg_queue) && close(endpoint.out_msg_queue)
 
     fetch(endpoint.write_task)
     # TODO we would also like to close the read Task
