@@ -59,4 +59,39 @@
 
     fetch(server_task)
 
+    # Now we test a faulty server
+
+    server_is_up = Base.Condition()
+
+    server_task2 = @async begin
+        server = listen(global_socket_name)
+        notify(server_is_up)
+        sock = accept(server)
+        global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
+        global msg_dispatcher = JSONRPC.MsgDispatcher()
+
+        msg_dispatcher[request2_type] = (conn, params)->34 # The request type requires a `String` return, so this tests whether we get an error.
+
+        run(conn)
+
+        for msg in conn
+            @test_throws ErrorException("The handler for the 'request2' request returned a value of type $Int, which is not a valid return type according to the request definition.") JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
+        end
+    end
+
+    wait(server_is_up)
+
+    sock2 = connect(global_socket_name)
+    conn2 = JSONRPCEndpoint(sock2, sock2)
+
+    run(conn2)
+
+    @test_throws JSONRPC.JSONRPCError(-32603, "The handler for the 'request2' request returned a value of type $Int, which is not a valid return type according to the request definition.", nothing) JSONRPC.send(conn2, request2_type, nothing)
+
+    close(conn2)
+    close(sock2)
+    close(conn)
+
+    fetch(server_task)
+
 end

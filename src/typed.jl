@@ -18,6 +18,7 @@ end
 
 get_param_type(::NotificationType{TPARAM}) where {TPARAM} = TPARAM
 get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
+get_return_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TR
 
 function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM,TR}
     res = send_request(x, request.method, params)
@@ -68,8 +69,12 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
             if handler.message_type isa RequestType
                 if res isa JSONRPCError
                     send_error_response(x, msg, res.code, res.msg, res.data)
-                else
+                elseif res isa get_return_type(handler.message_type)
                     send_success_response(x, msg, res)
+                else
+                    error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
+                    send_error_response(x, msg, -32603, error_msg, nothing)                    
+                    error(error_msg)
                 end
             end
         else
