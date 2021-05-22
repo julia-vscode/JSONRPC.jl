@@ -19,10 +19,19 @@ end
 Base.:(==)(a::Foo2,b::Foo2) = a.fieldA == b.fieldA && a.fieldB == b.fieldB
 
 @testset "JSONRPC" begin
+    @info "test_core START"
     include("test_core.jl")
-    include("test_interface_def.jl")
-    include("test_typed.jl")
+    @info "test_core END"
 
+    @info "test_interface_def START"
+    include("test_interface_def.jl")
+    @info "test_interface_def END"
+
+    @info "test_typed START"
+    include("test_typed.jl")
+    @info "test_typed END"
+
+    @info "check response type START"
     @testset "check response type" begin
         @test typed_res(nothing, Nothing) isa Nothing
         @test typed_res([1,"2",3], Vector{Any}) isa Vector{Any}
@@ -31,4 +40,5 @@ Base.:(==)(a::Foo2,b::Foo2) = a.fieldA == b.fieldA && a.fieldB == b.fieldB
         @test typed_res(['f','o','o'], String) isa String
         @test typed_res("foo", String) isa String
     end
+    @info "check response type END"
 end
