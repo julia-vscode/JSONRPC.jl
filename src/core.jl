@@ -91,13 +91,17 @@ function Base.run(x::JSONRPCEndpoint)
     x.status == :idle || error("Endpoint is not idle.")
 
     x.write_task = @async try
-        for msg in x.out_msg_queue
-            if isopen(x.pipe_out)
-                write_transport_layer(x.pipe_out, msg)
-            else
-                # TODO Reconsider at some point whether this should be treated as an error.
-                break
+        try
+            for msg in x.out_msg_queue
+                if isopen(x.pipe_out)
+                    write_transport_layer(x.pipe_out, msg)
+                else
+                    # TODO Reconsider at some point whether this should be treated as an error.
+                    break
+                end
             end
+        finally
+            close(x.out_msg_queue)
         end
     catch err
         bt = catch_backtrace()
@@ -106,37 +110,39 @@ function Base.run(x::JSONRPCEndpoint)
         else
             Base.display_error(stderr, err, bt)
         end
-    finally
-        close(x.out_msg_queue)
     end
 
     x.read_task = @async try
-        while true
-            message = read_transport_layer(x.pipe_in)
+        try
+            while true
+                message = read_transport_layer(x.pipe_in)
 
-            if message === nothing || x.status == :closed
-                break
-            end
-
-            message_dict = JSON.parse(message)
-
-            if haskey(message_dict, "method")
-                try
-                    put!(x.in_msg_queue, message_dict)
-                catch err
-                    if err isa InvalidStateException
-                        break
-                    else
-                        rethrow(err)
-                    end
+                if message === nothing || x.status == :closed
+                    break
                 end
-            else
-                # This must be a response
-                id_of_request = message_dict["id"]
 
-                channel_for_response = x.outstanding_requests[id_of_request]
-                put!(channel_for_response, message_dict)
+                message_dict = JSON.parse(message)
+
+                if haskey(message_dict, "method")
+                    try
+                        put!(x.in_msg_queue, message_dict)
+                    catch err
+                        if err isa InvalidStateException
+                            break
+                        else
+                            rethrow(err)
+                        end
+                    end
+                else
+                    # This must be a response
+                    id_of_request = message_dict["id"]
+
+                    channel_for_response = x.outstanding_requests[id_of_request]
+                    put!(channel_for_response, message_dict)
+                end
             end
+        finally
+            close(x.in_msg_queue)
         end
     catch err
         bt = catch_backtrace()
@@ -145,8 +151,6 @@ function Base.run(x::JSONRPCEndpoint)
         else
             Base.display_error(stderr, err, bt)
         end
-    finally
-        close(x.in_msg_queue)
     end
 
     x.status = :running

@@ -1,9 +1,9 @@
 @testset "Message dispatcher" begin
 
     if Sys.iswindows()
-        global_socket_name = "\\\\.\\pipe\\jsonrpc-testrun"
+        global_socket_name1 = "\\\\.\\pipe\\jsonrpc-testrun1"
     elseif Sys.isunix()
-        global_socket_name = joinpath(tempdir(), "jsonrpc-testrun")
+        global_socket_name1 = joinpath(tempdir(), "jsonrpc-testrun1")
     else
         error("Unknown operating system.")
     end
@@ -16,8 +16,8 @@
 
     server_is_up = Base.Condition()
 
-    server_task = @async begin
-        server = listen(global_socket_name)
+    server_task = @async try
+        server = listen(global_socket_name1)
         notify(server_is_up)
         sock = accept(server)
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
@@ -35,11 +35,13 @@
         for msg in conn
             JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
         end
+    catch err
+        Base.display_error(stderr, err, catch_backtrace())
     end
 
     wait(server_is_up)
 
-    sock2 = connect(global_socket_name)
+    sock2 = connect(global_socket_name1)
     conn2 = JSONRPCEndpoint(sock2, sock2)
 
     run(conn2)
@@ -61,10 +63,18 @@
 
     # Now we test a faulty server
 
+    if Sys.iswindows()
+        global_socket_name2 = "\\\\.\\pipe\\jsonrpc-testrun2"
+    elseif Sys.isunix()
+        global_socket_name2 = joinpath(tempdir(), "jsonrpc-testrun2")
+    else
+        error("Unknown operating system.")
+    end
+
     server_is_up = Base.Condition()
 
-    server_task2 = @async begin
-        server = listen(global_socket_name)
+    server_task2 = @async try
+        server = listen(global_socket_name2)
         notify(server_is_up)
         sock = accept(server)
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
@@ -77,11 +87,13 @@
         for msg in conn
             @test_throws ErrorException("The handler for the 'request2' request returned a value of type $Int, which is not a valid return type according to the request definition.") JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
         end
+    catch err
+        Base.display_error(stderr, err, catch_backtrace())
     end
 
     wait(server_is_up)
 
-    sock2 = connect(global_socket_name)
+    sock2 = connect(global_socket_name2)
     conn2 = JSONRPCEndpoint(sock2, sock2)
 
     run(conn2)
