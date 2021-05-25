@@ -80,7 +80,7 @@
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        msg_dispatcher[request2_type] = (conn, params)->34 # The request type requires a `String` return, so this tests whether we get an error.
+        msg_dispatcher[request2_type] = (conn, params) -> 34 # The request type requires a `String` return, so this tests whether we get an error.
 
         run(conn)
 

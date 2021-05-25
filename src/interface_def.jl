@@ -36,7 +36,7 @@ function field_type(field::Expr, typename::String)
             return :Any
         end
     else
-        return field.args[2]
+return field.args[2]
     end
 end
 
