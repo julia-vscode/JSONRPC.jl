@@ -13,6 +13,14 @@ function JSON.Writer.CompositeTypeWrapper(t::Outbound)
     JSON.Writer.CompositeTypeWrapper(t, Tuple(fns))
 end
 
+function JSON.lower(a::Outbound)
+    if nfields(a) > 0
+        JSON.Writer.CompositeTypeWrapper(a)
+    else
+        nothing
+    end
+end
+
 function field_allows_missing(field::Expr)
     field.head == :(::) && field.args[2] isa Expr &&
     field.args[2].head == :curly && field.args[2].args[1] == :Union &&
