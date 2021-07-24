@@ -40,49 +40,63 @@ end
 struct Handler
     message_type::AbstractMessageType
     func::Function
+    supports_cancel_token::Bool
 end
 
 mutable struct MsgDispatcher
     _handlers::Dict{String,Handler}
-    _currentlyHandlingMsg::Bool
+    _cancel_token_sources::Dict{String,CancellationTokens.CancellationTokenSource}
 
     function MsgDispatcher()
-        new(Dict{String,Handler}(), false)
+        new(Dict{String,Handler}(), Dict{String,CancellationTokens.CancellationTokenSource}())
+    end
+end
+
+function Base.run(endpoint::JSONRPCEndpoint, dispatcher::MsgDispatcher, token=nothing; async=true)
+    @async try
+        for msg in endpoint
+            cts = CancellationToken.CancellationTokenSource()
+            token = get_token(cts)
+            @async try
+                dispatch_msg(endpoint, dispatcher, msg, token)
+            catch err
+                # TODO Do something here
+            end
+        end
+    catch err
+        if error_handler === nothing
+            Base.display_error(err, catch_backtrace())
+        else
+            error_handler(err, Base.catch_backtrace())
+        end
     end
 end
 
 function Base.setindex!(dispatcher::MsgDispatcher, func::Function, message_type::AbstractMessageType)
-    dispatcher._handlers[message_type.method] = Handler(message_type, func)
+    dispatcher._handlers[message_type.method] = Handler(message_type, func, false, false)
 end
 
-function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
-    dispatcher._currentlyHandlingMsg = true
-    try
-        method_name = msg["method"]
-        handler = get(dispatcher._handlers, method_name, nothing)
-        if handler !== nothing
-            param_type = get_param_type(handler.message_type)
-            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
+function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg, token=nothing)
+    method_name = msg["method"]
+    handler = get(dispatcher._handlers, method_name, nothing)
+    if handler !== nothing
+        param_type = get_param_type(handler.message_type)
+        params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type, (;(Symbol(i[1]) => i[2] for i in msg["params"])...)) : param_type(msg["params"])
 
-            res = handler.func(x, params)
+        res = handler.supports_cancel_token ? handler.func(x, params, token) : handler.func(x, params)
 
-            if handler.message_type isa RequestType
-                if res isa JSONRPCError
-                    send_error_response(x, msg, res.code, res.msg, res.data)
-                elseif res isa get_return_type(handler.message_type)
-                    send_success_response(x, msg, res)
-                else
-                    error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                    send_error_response(x, msg, -32603, error_msg, nothing)                    
-                    error(error_msg)
-                end
+        if handler.message_type isa RequestType
+            if res isa JSONRPCError
+                send_error_response(x, msg, res.code, res.msg, res.data)
+            elseif res isa get_return_type(handler.message_type)
+                send_success_response(x, msg, res)
+            else
+                error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
+                send_error_response(x, msg, -32603, error_msg, nothing)
+                error(error_msg)
             end
-        else
-            error("Unknown method $method_name.")
         end
-    finally
-        dispatcher._currentlyHandlingMsg = false
+    else
+        error("Unknown method $method_name.")
     end
 end
-
-is_currently_handling_msg(d::MsgDispatcher) = d._currentlyHandlingMsg
