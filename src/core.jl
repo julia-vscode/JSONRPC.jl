@@ -66,6 +66,7 @@ function write_transport_layer(stream, response)
     n = length(response_utf8)
     write(stream, "Content-Length: $n\r\n\r\n")
     write(stream, response_utf8)
+    flush(stream)
 end
 
 function read_transport_layer(stream)
