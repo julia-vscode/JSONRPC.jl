@@ -62,7 +62,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
         handler = get(dispatcher._handlers, method_name, nothing)
         if handler !== nothing
             param_type = get_param_type(handler.message_type)
-            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
+            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type, (;(Symbol(i[1]) => i[2] for i in msg["params"])...)) : param_type(msg["params"])
 
             res = handler.func(x, params)
 
@@ -73,7 +73,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
                     send_success_response(x, msg, res)
                 else
                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                    send_error_response(x, msg, -32603, error_msg, nothing)                    
+            send_error_response(x, msg, -32603, error_msg, nothing)                    
                     error(error_msg)
                 end
             end
