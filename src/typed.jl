@@ -59,6 +59,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
     dispatcher._currentlyHandlingMsg = true
     try
         method_name = msg["method"]
+        is_request = haskey(msg, "id")
         handler = get(dispatcher._handlers, method_name, nothing)
         if handler !== nothing
             param_type = get_param_type(handler.message_type)
@@ -78,6 +79,10 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
                 end
             end
         else
+            if is_request # even invalid requests MUST get a response - see Section 5 of the JSON RPC specification.
+                send_error_response(x, msg, -32601, "Unknown method.", nothing)
+            end
+            # TODO: ignoring notifications is legal, so there's no need to crash here on unknown things. However, removing this requires downstream support.
             error("Unknown method $method_name.")
         end
     finally
