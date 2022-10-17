@@ -36,21 +36,21 @@ const INVALID_REQUEST = -32600
 
 The method does not exist / is not available.
 """
-const METHOD_NOT_FOUND = -32700
+const METHOD_NOT_FOUND = -32601
 
 """
     INVALID_PARAMS
 
 Invalid method parameter(s).
 """
-const INVALID_PARAMS = -32700
+const INVALID_PARAMS = -32602
 
 """
     INTERNAL_ERROR
 
 Internal JSON-RPC error.
 """
-const INTERNAL_ERROR = -32700
+const INTERNAL_ERROR = -32603
 
 """
    RPCErrorStrings
@@ -67,6 +67,8 @@ const RPCErrorStrings = Base.IdDict(
     INTERNAL_ERROR => "InternalError",
     [ i => "ServerError" for i in -32099:-32000]...,
     # TODO: these should be removed - they are in the application/implementation specific range
+    -32000 => "serverErrorEnd",
+    -32099 => "serverErrorStart",
     -32002 => "ServerNotInitialized",
     -32001 => "UnknownErrorCode",
     -32800 => "RequestCancelled",

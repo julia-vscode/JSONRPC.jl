@@ -10,5 +10,5 @@
     @test sprint(showerror, JSONRPC.JSONRPCError(-32001, "FOO", "BAR")) == "UnknownErrorCode: FOO (BAR)"
     @test sprint(showerror, JSONRPC.JSONRPCError(-32800, "FOO", "BAR")) == "RequestCancelled: FOO (BAR)"
     @test sprint(showerror, JSONRPC.JSONRPCError(-32801, "FOO", "BAR")) == "ContentModified: FOO (BAR)"
-    @test sprint(showerror, JSONRPC.JSONRPCError(1, "FOO", "BAR")) == "Unkonwn: FOO (BAR)"
+    @test sprint(showerror, JSONRPC.JSONRPCError(1, "FOO", "BAR")) == "Unknown: FOO (BAR)"
 end
