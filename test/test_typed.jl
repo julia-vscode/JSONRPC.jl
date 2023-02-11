@@ -1,4 +1,7 @@
-@testset "Message dispatcher" begin
+@testitem "Message dispatcher" begin
+    using Sockets
+
+    include("shared_test_code.jl")
 
     if Sys.iswindows()
         global_socket_name1 = "\\\\.\\pipe\\jsonrpc-testrun1"
@@ -28,7 +31,7 @@
             params.fieldA == 1 ? "YES" : "NO"
         end
         msg_dispatcher[request2_type] = (conn, params) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
-        msg_dispatcher[notify1_type] = (conn, params) -> g_var = params
+        msg_dispatcher[notify1_type] = (conn, params) -> global g_var = params
 
         run(conn)
 
@@ -106,4 +109,15 @@
 
     fetch(server_task)
 
+end
+
+@testitem "check response type" begin
+    using JSONRPC: typed_res
+    
+    @test typed_res(nothing, Nothing) isa Nothing
+    @test typed_res([1,"2",3], Vector{Any}) isa Vector{Any}
+    @test typed_res([1,2,3], Vector{Int}) isa Vector{Int}
+    @test typed_res([1,2,3], Vector{Float64}) isa Vector{Float64}
+    @test typed_res(['f','o','o'], String) isa String
+    @test typed_res("foo", String) isa String
 end

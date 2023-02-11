@@ -1,5 +1,7 @@
-@testset "Interface Definition" begin
-
+@testitem "Interface Definition" begin
+    using JSON
+    include("shared_test_code.jl")
+    
     @test_throws ErrorException Foo()
 
     a = Foo(fieldA=1, fieldB="A")
