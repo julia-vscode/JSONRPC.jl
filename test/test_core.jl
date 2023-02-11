@@ -1,4 +1,4 @@
-@testset "Core" begin
+@testitem "Core" begin
     @test sprint(showerror, JSONRPC.JSONRPCError(-32700, "FOO", "BAR")) == "ParseError: FOO (BAR)"
     @test sprint(showerror, JSONRPC.JSONRPCError(-32600, "FOO", "BAR")) == "InvalidRequest: FOO (BAR)"
     @test sprint(showerror, JSONRPC.JSONRPCError(-32601, "FOO", "BAR")) == "MethodNotFound: FOO (BAR)"
