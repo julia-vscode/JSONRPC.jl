@@ -145,6 +145,10 @@ function Base.run(x::JSONRPCEndpoint)
         finally
             close(x.in_msg_queue)
         end
+
+        for i in values(x.outstanding_requests)
+            close(i)
+        end
     catch err
         bt = catch_backtrace()
         if x.err_handler !== nothing
