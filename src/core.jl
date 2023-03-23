@@ -251,6 +251,8 @@ function send_error_response(endpoint, original_request, code, message, data)
 end
 
 function Base.close(endpoint::JSONRPCEndpoint)
+    endpoint.status == :closed && return
+
     flush(endpoint)
 
     endpoint.status = :closed
