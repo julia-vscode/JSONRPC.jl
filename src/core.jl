@@ -156,7 +156,7 @@ function Base.run(x::JSONRPCEndpoint)
             close(i)
         end
 
-        c.status = :closed
+        x.status = :closed
     catch err
         bt = catch_backtrace()
         if x.err_handler !== nothing
