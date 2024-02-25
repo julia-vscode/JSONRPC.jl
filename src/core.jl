@@ -52,6 +52,10 @@ Internal JSON-RPC error.
 """
 const INTERNAL_ERROR = -32603
 
+# these are the reserved endpoints of JSON-RPC error codes
+const SERVER_ERROR_END       = -32000
+const SERVER_ERROR_START     = -32099
+
 """
    RPCErrorStrings
 
@@ -65,7 +69,7 @@ const RPCErrorStrings = Base.IdDict(
     METHOD_NOT_FOUND => "MethodNotFound",
     INVALID_PARAMS => "InvalidParams",
     INTERNAL_ERROR => "InternalError",
-    [ i => "ServerError" for i in -32099:-32000]...,
+    [ i => "ServerError" for i in SERVER_ERROR_START:SERVER_ERROR_END]...,
     # TODO: these should be removed - they are in the application/implementation specific range
     -32000 => "serverErrorEnd",
     -32099 => "serverErrorStart",
