@@ -17,6 +17,28 @@ struct JSONRPCError <: Exception
 end
 
 """
+    SERVER_ERROR_END
+
+The end of the range of server-reserved errors.
+
+These are JSON-RPC server errors that are free for the taking
+for JSON-RPC server implementations. Applications making use of
+this library should NOT define new errors in this range.
+"""
+const SERVER_ERROR_END       = -32000
+
+"""
+    SERVER_ERROR_START
+
+The start of the range of server-reserved errors.
+
+These are JSON-RPC server errors that are free for the taking
+for JSON-RPC server implementations. Applications making use of
+this library should NOT define new errors in this range.
+"""
+const SERVER_ERROR_START     = -32099
+
+"""
     PARSE_ERROR
 
 Invalid JSON was received by the server.
@@ -52,10 +74,6 @@ Internal JSON-RPC error.
 """
 const INTERNAL_ERROR = -32603
 
-# these are the reserved endpoints of JSON-RPC error codes
-const SERVER_ERROR_END       = -32000
-const SERVER_ERROR_START     = -32099
-
 """
    RPCErrorStrings
 
@@ -70,13 +88,8 @@ const RPCErrorStrings = Base.IdDict(
     INVALID_PARAMS => "InvalidParams",
     INTERNAL_ERROR => "InternalError",
     [ i => "ServerError" for i in SERVER_ERROR_START:SERVER_ERROR_END]...,
-    # TODO: these should be removed - they are in the application/implementation specific range
-    -32000 => "serverErrorEnd",
-    -32099 => "serverErrorStart",
     -32002 => "ServerNotInitialized",
     -32001 => "UnknownErrorCode",
-    -32800 => "RequestCancelled",
-	-32801 => "ContentModified"
 )
 
 function Base.showerror(io::IO, ex::JSONRPCError)
