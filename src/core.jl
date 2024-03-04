@@ -25,7 +25,7 @@ These are JSON-RPC server errors that are free for the taking
 for JSON-RPC server implementations. Applications making use of
 this library should NOT define new errors in this range.
 """
-const SERVER_ERROR_END       = -32000
+const SERVER_ERROR_END = -32000
 
 """
     SERVER_ERROR_START
@@ -36,7 +36,7 @@ These are JSON-RPC server errors that are free for the taking
 for JSON-RPC server implementations. Applications making use of
 this library should NOT define new errors in this range.
 """
-const SERVER_ERROR_START     = -32099
+const SERVER_ERROR_START = -32099
 
 """
     PARSE_ERROR
