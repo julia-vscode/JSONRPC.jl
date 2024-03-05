@@ -1,35 +1,99 @@
+"""
+    JSONRPCError
+
+An object representing a JSON-RPC Error.
+
+Fields:
+ * code::Int
+ * msg::AbstractString
+ * data::Any
+
+See Section 5.1 of the JSON RPC 2.0 specification for more information.
+"""
 struct JSONRPCError <: Exception
     code::Int
     msg::AbstractString
     data::Any
 end
 
+"""
+    SERVER_ERROR_END
+
+The end of the range of server-reserved errors.
+
+These are JSON-RPC server errors that are free for the taking
+for JSON-RPC server implementations. Applications making use of
+this library should NOT define new errors in this range.
+"""
+const SERVER_ERROR_END = -32000
+
+"""
+    SERVER_ERROR_START
+
+The start of the range of server-reserved errors.
+
+These are JSON-RPC server errors that are free for the taking
+for JSON-RPC server implementations. Applications making use of
+this library should NOT define new errors in this range.
+"""
+const SERVER_ERROR_START = -32099
+
+"""
+    PARSE_ERROR
+
+Invalid JSON was received by the server.
+An error occurred on the server while parsing the JSON text.
+"""
+const PARSE_ERROR = -32700
+
+"""
+    INVALID_REQUEST
+
+The JSON sent is not a valid Request object.
+"""
+const INVALID_REQUEST = -32600
+
+"""
+    METHOD_NOT_FOUND
+
+The method does not exist / is not available.
+"""
+const METHOD_NOT_FOUND = -32601
+
+"""
+    INVALID_PARAMS
+
+Invalid method parameter(s).
+"""
+const INVALID_PARAMS = -32602
+
+"""
+    INTERNAL_ERROR
+
+Internal JSON-RPC error.
+"""
+const INTERNAL_ERROR = -32603
+
+"""
+   RPCErrorStrings
+
+A `Base.IdDict` containing the mapping of JSON-RPC error codes to a short, descriptive string.
+
+Use this to hook into `showerror(io::IO, ::JSONRPCError)` for display purposes. A default fallback to `"Unknown"` exists.
+"""
+const RPCErrorStrings = Base.IdDict(
+    PARSE_ERROR => "ParseError",
+    INVALID_REQUEST => "InvalidRequest",
+    METHOD_NOT_FOUND => "MethodNotFound",
+    INVALID_PARAMS => "InvalidParams",
+    INTERNAL_ERROR => "InternalError",
+    [ i => "ServerError" for i in SERVER_ERROR_START:SERVER_ERROR_END]...,
+    -32002 => "ServerNotInitialized",
+    -32001 => "UnknownErrorCode",
+)
+
 function Base.showerror(io::IO, ex::JSONRPCError)
-    error_code_as_string = if ex.code == -32700
-        "ParseError"
-    elseif ex.code == -32600
-        "InvalidRequest"
-    elseif ex.code == -32601
-        "MethodNotFound"
-    elseif ex.code == -32602
-        "InvalidParams"
-    elseif ex.code == -32603
-        "InternalError"
-    elseif ex.code == -32099
-        "serverErrorStart"
-    elseif ex.code == -32000
-        "serverErrorEnd"
-    elseif ex.code == -32002
-        "ServerNotInitialized"
-    elseif ex.code == -32001
-        "UnknownErrorCode"
-    elseif ex.code == -32800
-        "RequestCancelled"
-	elseif ex.code == -32801
-        "ContentModified"
-    else
-        "Unkonwn"
-    end
+    error_code_as_string = get(RPCErrorStrings, ex.code, "Unknown")
 
     print(io, error_code_as_string)
     print(io, ": ")
