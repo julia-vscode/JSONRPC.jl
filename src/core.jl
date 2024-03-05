@@ -87,7 +87,7 @@ const RPCErrorStrings = Base.IdDict(
     METHOD_NOT_FOUND => "MethodNotFound",
     INVALID_PARAMS => "InvalidParams",
     INTERNAL_ERROR => "InternalError",
-    [ i => "ServerError" for i in SERVER_ERROR_START:SERVER_ERROR_END]...,
+    [i => "ServerError" for i in SERVER_ERROR_START:SERVER_ERROR_END]...,
     -32002 => "ServerNotInitialized",
     -32001 => "UnknownErrorCode",
 )
@@ -105,7 +105,7 @@ function Base.showerror(io::IO, ex::JSONRPCError)
     end
 end
 
-mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
+mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO}
     pipe_in::IOIn
     pipe_out::IOOut
 
@@ -122,7 +122,7 @@ mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
     write_task::Union{Nothing,Task}
 end
 
-JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
+JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing) =
     JSONRPCEndpoint(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
 
 function write_transport_layer(stream, response)
@@ -213,7 +213,7 @@ function Base.run(x::JSONRPCEndpoint)
                 put!(channel_for_response, message_dict)
             end
         end
-        
+
         close(x.in_msg_queue)
 
         for i in values(x.outstanding_requests)
@@ -280,7 +280,7 @@ function get_next_message(endpoint::JSONRPCEndpoint)
     return msg
 end
 
-function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
+function Base.iterate(endpoint::JSONRPCEndpoint, state=nothing)
     check_dead_endpoint!(endpoint)
 
     try
