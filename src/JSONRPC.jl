@@ -1,6 +1,6 @@
 module JSONRPC
 
-import JSON, UUIDs
+import JSON, UUIDs, CancellationTokens
 
 include("packagedef.jl")
 
