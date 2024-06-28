@@ -1,7 +1,7 @@
 @testitem "Interface Definition" begin
     using JSON
     include("shared_test_code.jl")
-    
+
     @test_throws ErrorException Foo()
 
     a = Foo(fieldA=1, fieldB="A")
@@ -21,14 +21,14 @@
     @test Foo(JSON.parse(JSON.json(a))) == a
     @test Foo(JSON.parse(JSON.json(b))) == b
 
-    c = Foo2(fieldA=nothing, fieldB=[1,2])
+    c = Foo2(fieldA=nothing, fieldB=[1, 2])
 
     @test c.fieldA === nothing
-    @test c.fieldB == [1,2]
+    @test c.fieldB == [1, 2]
     @test Foo2(JSON.parse(JSON.json(c))) == c
 
-    d = Foo2(fieldA=3, fieldB=[1,2])
+    d = Foo2(fieldA=3, fieldB=[1, 2])
     @test d.fieldA === 3
-    @test d.fieldB == [1,2]
+    @test d.fieldB == [1, 2]
     @test Foo2(JSON.parse(JSON.json(d))) == d
 end
