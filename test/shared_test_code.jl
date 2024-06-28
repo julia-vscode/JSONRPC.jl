@@ -12,4 +12,4 @@ end
     fieldB::Vector{Int}
 end
 
-Base.:(==)(a::Foo2,b::Foo2) = a.fieldA == b.fieldA && a.fieldB == b.fieldB
+Base.:(==)(a::Foo2, b::Foo2) = a.fieldA == b.fieldA && a.fieldB == b.fieldB
