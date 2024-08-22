@@ -1,6 +1,6 @@
-@testitem "Interface Definition" begin
+@testitem "Interface Definition" setup=[TestStructs] begin
     using JSON
-    include("shared_test_code.jl")
+    using .TestStructs: Foo, Foo2
     
     @test_throws ErrorException Foo()
 

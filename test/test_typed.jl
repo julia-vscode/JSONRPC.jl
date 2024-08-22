@@ -1,7 +1,6 @@
-@testitem "Message dispatcher" begin
+@testitem "Dynamic message dispatcher" setup=[TestStructs] begin
     using Sockets
-
-    include("shared_test_code.jl")
+    using .TestStructs: Foo, Foo2
 
     if Sys.iswindows()
         global_socket_name1 = "\\\\.\\pipe\\jsonrpc-testrun1"
