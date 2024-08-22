@@ -99,7 +99,11 @@ macro message_dispatcher(name, body)
                             param_type = get_param_type($(esc(i.args[2])))
                             params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
 
-                            res = $(esc(i.args[3]))(x, params)
+                            if context===nothing
+                                res = $(esc(i.args[3]))(x, params)
+                            else
+                                res = $(esc(i.args[3]))(x, params, context)
+                            end
 
                             if $(esc(i.args[2])) isa RequestType
                                 if res isa JSONRPCError
