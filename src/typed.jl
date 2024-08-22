@@ -86,3 +86,40 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
 end
 
 is_currently_handling_msg(d::MsgDispatcher) = d._currentlyHandlingMsg
+
+macro message_dispatcher(name, body)
+    quote
+        function $(esc(name))(x, msg::Dict{String,Any}, context=nothing)
+            method_name = msg["method"]::String
+
+            $(
+                (
+                    :(
+                        if method_name == $(esc(i.args[2])).method
+                            param_type = get_param_type($(esc(i.args[2])))
+                            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
+
+                            res = $(esc(i.args[3]))(x, params)
+
+                            if $(esc(i.args[2])) isa RequestType
+                                if res isa JSONRPCError
+                                    send_error_response(x, msg, res.code, res.msg, res.data)
+                                elseif res isa get_return_type($(esc(i.args[2])))
+                                    send_success_response(x, msg, res)
+                                else
+                                    error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
+                                    send_error_response(x, msg, -32603, error_msg, nothing)                    
+                                    error(error_msg)
+                                end
+                            end
+
+                            return
+                        end
+                    ) for i in filter(i->i isa Expr, body.args)
+                )...
+            )
+
+            error("Unknown method $method_name.")
+        end
+    end
+end
