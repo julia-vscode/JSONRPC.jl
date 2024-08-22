@@ -2,13 +2,7 @@
     using Sockets
     using .TestStructs: Foo, Foo2
 
-    if Sys.iswindows()
-        global_socket_name1 = "\\\\.\\pipe\\jsonrpc-testrun1"
-    elseif Sys.isunix()
-        global_socket_name1 = joinpath(tempdir(), "jsonrpc-testrun1")
-    else
-        error("Unknown operating system.")
-    end
+    global_socket_name1 = JSONRPC.generate_pipe_name()
 
     request1_type = JSONRPC.RequestType("request1", Foo, String)
     request2_type = JSONRPC.RequestType("request2", Nothing, String)
@@ -65,13 +59,7 @@
 
     # Now we test a faulty server
 
-    if Sys.iswindows()
-        global_socket_name2 = "\\\\.\\pipe\\jsonrpc-testrun2"
-    elseif Sys.isunix()
-        global_socket_name2 = joinpath(tempdir(), "jsonrpc-testrun2")
-    else
-        error("Unknown operating system.")
-    end
+    global_socket_name2 = JSONRPC.generate_pipe_name()
 
     server_is_up = Base.Condition()
 
@@ -124,14 +112,8 @@ end
 @testitem "Static message dispatcher" setup=[TestStructs] begin
     using Sockets
     using .TestStructs: Foo, Foo2
-
-    if Sys.iswindows()
-        global_socket_name1 = "\\\\.\\pipe\\jsonrpc-testrun3"
-    elseif Sys.isunix()
-        global_socket_name1 = joinpath(tempdir(), "jsonrpc-testrun1")
-    else
-        error("Unknown operating system.")
-    end
+    
+    global_socket_name1 = JSONRPC.generate_pipe_name()
 
     request1_type = JSONRPC.RequestType("request1", Foo, String)
     request2_type = JSONRPC.RequestType("request2", Nothing, String)
@@ -189,13 +171,7 @@ end
 
     # Now we test a faulty server
 
-    if Sys.iswindows()
-        global_socket_name2 = "\\\\.\\pipe\\jsonrpc-testrun4"
-    elseif Sys.isunix()
-        global_socket_name2 = joinpath(tempdir(), "jsonrpc-testrun2")
-    else
-        error("Unknown operating system.")
-    end
+    global_socket_name2 = JSONRPC.generate_pipe_name()
 
     server_is_up = Base.Condition()
 
