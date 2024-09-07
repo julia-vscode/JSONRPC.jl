@@ -23,8 +23,8 @@ end
 
 function field_allows_missing(field::Expr)
     field.head == :(::) && field.args[2] isa Expr &&
-    field.args[2].head == :curly && field.args[2].args[1] == :Union &&
-    any(i -> i == :Missing, field.args[2].args)
+        field.args[2].head == :curly && field.args[2].args[1] == :Union &&
+        any(i -> i == :Missing, field.args[2].args)
 end
 
 function field_type(field::Expr, typename::String)
@@ -55,9 +55,9 @@ macro dict_readable(arg)
         $((arg))
 
         $(count_real_fields > 0 ? :(
-        function $tname(; $((get_kwsignature_for_field(field) for field in arg.args[3].args if !(field isa LineNumberNode))...))
-            $tname($((field.args[1] for field in arg.args[3].args if !(field isa LineNumberNode))...))
-        end
+            function $tname(; $((get_kwsignature_for_field(field) for field in arg.args[3].args if !(field isa LineNumberNode))...))
+                $tname($((field.args[1] for field in arg.args[3].args if !(field isa LineNumberNode))...))
+            end
         ) : nothing)
 
         function $tname(dict::Dict)
@@ -69,7 +69,7 @@ macro dict_readable(arg)
         if !(field isa LineNumberNode)
             fieldname = string(field.args[1])
             fieldtype = field_type(field, string(tname))
-            if fieldtype isa Expr && fieldtype.head == :curly && length(fieldtype.args)==3 && fieldtype.args[1]==:Dict
+            if fieldtype isa Expr && fieldtype.head == :curly && length(fieldtype.args) == 3 && fieldtype.args[1] == :Dict
                 f = :($(fieldtype)(i for i in pairs(dict[$fieldname])))
             elseif fieldtype isa Expr && fieldtype.head == :curly && fieldtype.args[2] != :Any
                 f = :($(fieldtype.args[2]).(dict[$fieldname]))
