@@ -1,4 +1,4 @@
-@testitem "Dynamic message dispatcher" setup=[TestStructs] begin
+@testitem "Dynamic message dispatcher" setup = [TestStructs] begin
     using Sockets
     using .TestStructs: Foo, Foo2
 
@@ -70,7 +70,7 @@
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        msg_dispatcher[request2_type] = (conn, params)->34 # The request type requires a `String` return, so this tests whether we get an error.
+        msg_dispatcher[request2_type] = (conn, params) -> 34 # The request type requires a `String` return, so this tests whether we get an error.
 
         run(conn)
 
@@ -100,19 +100,19 @@ end
 
 @testitem "check response type" begin
     using JSONRPC: typed_res
-    
+
     @test typed_res(nothing, Nothing) isa Nothing
-    @test typed_res([1,"2",3], Vector{Any}) isa Vector{Any}
-    @test typed_res([1,2,3], Vector{Int}) isa Vector{Int}
-    @test typed_res([1,2,3], Vector{Float64}) isa Vector{Float64}
-    @test typed_res(['f','o','o'], String) isa String
+    @test typed_res([1, "2", 3], Vector{Any}) isa Vector{Any}
+    @test typed_res([1, 2, 3], Vector{Int}) isa Vector{Int}
+    @test typed_res([1, 2, 3], Vector{Float64}) isa Vector{Float64}
+    @test typed_res(['f', 'o', 'o'], String) isa String
     @test typed_res("foo", String) isa String
 end
 
-@testitem "Static message dispatcher" setup=[TestStructs] begin
+@testitem "Static message dispatcher" setup = [TestStructs] begin
     using Sockets
     using .TestStructs: Foo, Foo2
-    
+
     global_socket_name1 = JSONRPC.generate_pipe_name()
 
     request1_type = JSONRPC.RequestType("request1", Foo, String)

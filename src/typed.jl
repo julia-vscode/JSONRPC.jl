@@ -29,7 +29,7 @@ end
 # so that we get an error in the typecast at the end of `send`
 # if that is not the case.
 typed_res(res, TR::Type{Nothing}) = res
-typed_res(res, TR::Type{<:T}) where {T <: AbstractArray{Any}} = T(res)
+typed_res(res, TR::Type{<:T}) where {T<:AbstractArray{Any}} = T(res)
 typed_res(res, TR::Type{<:AbstractArray{T}}) where T = T.(res)
 typed_res(res, TR::Type) = TR(res)
 
@@ -62,7 +62,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
         handler = get(dispatcher._handlers, method_name, nothing)
         if handler !== nothing
             param_type = get_param_type(handler.message_type)
-            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
+            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type, (; (Symbol(i[1]) => i[2] for i in msg["params"])...)) : param_type(msg["params"])
 
             res = handler.func(x, params)
 
@@ -73,7 +73,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
                     send_success_response(x, msg, res)
                 else
                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                    send_error_response(x, msg, -32603, error_msg, nothing)                    
+                    send_error_response(x, msg, -32603, error_msg, nothing)
                     error(error_msg)
                 end
             end
@@ -97,9 +97,9 @@ macro message_dispatcher(name, body)
                     :(
                         if method_name == $(esc(i.args[2])).method
                             param_type = get_param_type($(esc(i.args[2])))
-                            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
+                            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type, (; (Symbol(i[1]) => i[2] for i in msg["params"])...)) : param_type(msg["params"])
 
-                            if context===nothing
+                            if context === nothing
                                 res = $(esc(i.args[3]))(x, params)
                             else
                                 res = $(esc(i.args[3]))(x, params, context)
@@ -112,14 +112,14 @@ macro message_dispatcher(name, body)
                                     send_success_response(x, msg, res)
                                 else
                                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                                    send_error_response(x, msg, -32603, error_msg, nothing)                    
+                                    send_error_response(x, msg, -32603, error_msg, nothing)
                                     error(error_msg)
                                 end
                             end
 
                             return
                         end
-                    ) for i in filter(i->i isa Expr, body.args)
+                    ) for i in filter(i -> i isa Expr, body.args)
                 )...
             )
 
