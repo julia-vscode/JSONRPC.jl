@@ -334,7 +334,13 @@ function Base.flush(endpoint::JSONRPCEndpoint)
     check_dead_endpoint!(endpoint)
 
     while isready(endpoint.out_msg_queue)
-        yield()
+        try
+            yield()
+        catch e
+            if !isa(e, InterruptException)
+                rethrow(e)
+            end
+        end
     end
 end
 
