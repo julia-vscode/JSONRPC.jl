@@ -163,70 +163,74 @@ Base.isopen(x::JSONRPCEndpoint) = x.status != :closed && isopen(x.pipe_in) && is
 function Base.run(x::JSONRPCEndpoint)
     x.status == :idle || error("Endpoint is not idle.")
 
-    x.write_task = @async try
+    x.write_task = @async disable_sigint() do
         try
-            for msg in x.out_msg_queue
-                if isopen(x.pipe_out)
-                    write_transport_layer(x.pipe_out, msg)
-                else
-                    # TODO Reconsider at some point whether this should be treated as an error.
-                    break
+            try
+                for msg in x.out_msg_queue
+                    if isopen(x.pipe_out)
+                        write_transport_layer(x.pipe_out, msg)
+                    else
+                        # TODO Reconsider at some point whether this should be treated as an error.
+                        break
+                    end
                 end
+            finally
+                close(x.out_msg_queue)
             end
-        finally
-            close(x.out_msg_queue)
-        end
-    catch err
-        bt = catch_backtrace()
-        if x.err_handler !== nothing
-            x.err_handler(err, bt)
-        else
-            Base.display_error(stderr, err, bt)
+        catch err
+            bt = catch_backtrace()
+            if x.err_handler !== nothing
+                x.err_handler(err, bt)
+            else
+                Base.display_error(stderr, err, bt)
+            end
         end
     end
 
-    x.read_task = @async try
-        while true
-            message = read_transport_layer(x.pipe_in)
+    x.read_task = @async disable_sigint() do
+        try
+            while true
+                message = read_transport_layer(x.pipe_in)
 
-            if message === nothing || x.status == :closed
-                break
-            end
-
-            message_dict = JSON.parse(message)
-
-            if haskey(message_dict, "method")
-                try
-                    put!(x.in_msg_queue, message_dict)
-                catch err
-                    if err isa InvalidStateException
-                        break
-                    else
-                        rethrow(err)
-                    end
+                if message === nothing || x.status == :closed
+                    break
                 end
-            else
-                # This must be a response
-                id_of_request = message_dict["id"]
 
-                channel_for_response = x.outstanding_requests[id_of_request]
-                put!(channel_for_response, message_dict)
+                message_dict = JSON.parse(message)
+
+                if haskey(message_dict, "method")
+                    try
+                        put!(x.in_msg_queue, message_dict)
+                    catch err
+                        if err isa InvalidStateException
+                            break
+                        else
+                            rethrow(err)
+                        end
+                    end
+                else
+                    # This must be a response
+                    id_of_request = message_dict["id"]
+
+                    channel_for_response = x.outstanding_requests[id_of_request]
+                    put!(channel_for_response, message_dict)
+                end
             end
-        end
-        
-        close(x.in_msg_queue)
 
-        for i in values(x.outstanding_requests)
-            close(i)
-        end
+            close(x.in_msg_queue)
 
-        x.status = :closed
-    catch err
-        bt = catch_backtrace()
-        if x.err_handler !== nothing
-            x.err_handler(err, bt)
-        else
-            Base.display_error(stderr, err, bt)
+            for i in values(x.outstanding_requests)
+                close(i)
+            end
+
+            x.status = :closed
+        catch err
+            bt = catch_backtrace()
+            if x.err_handler !== nothing
+                x.err_handler(err, bt)
+            else
+                Base.display_error(stderr, err, bt)
+            end
         end
     end
 
