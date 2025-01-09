@@ -128,11 +128,11 @@ end
     server_is_up = Base.Condition()
 
     JSONRPC.@message_dispatcher my_dispatcher begin
-        request1_type => (conn, params, token) -> begin
+        request1_type => (params, token) -> begin
             params.fieldA == 1 ? "YES" : "NO"
         end
-        request2_type => (conn, params, token) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
-        notify1_type => (conn, params) -> global g_var = params[1]
+        request2_type => (params, token) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
+        notify1_type => (params) -> global g_var = params[1]
     end
 
     server_task = @async try
@@ -180,7 +180,7 @@ end
     server_is_up = Base.Condition()
 
     JSONRPC.@message_dispatcher my_dispatcher2 begin
-        request2_type => (conn, params, token) -> 34 # The request type requires a `String` return, so this tests whether we get an error.
+        request2_type => (params, token) -> 34 # The request type requires a `String` return, so this tests whether we get an error.
     end
 
     server_task2 = @async try
