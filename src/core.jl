@@ -12,7 +12,7 @@ See Section 5.1 of the JSON RPC 2.0 specification for more information.
 """
 struct JSONRPCError <: Exception
     code::Int
-    msg::AbstractString
+    message::AbstractString
     data::Any
 end
 
@@ -97,7 +97,7 @@ function Base.showerror(io::IO, ex::JSONRPCError)
 
     print(io, error_code_as_string)
     print(io, ": ")
-    print(io, ex.msg)
+    print(io, ex.message)
     if ex.data !== nothing
         print(io, " (")
         print(io, ex.data)
