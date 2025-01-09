@@ -108,7 +108,7 @@ end
 struct Request
     method::String
     params::Union{Nothing,Dict{String,Any},Vector{Any}}
-    id::Union{Nothing,String}
+    id::Union{Nothing,String,Int}
     token::Union{CancellationTokens.CancellationToken,Nothing}
 end
 
@@ -120,8 +120,8 @@ mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
     in_msg_queue::Channel{Request}
 
     outstanding_requests::Dict{String,Channel{Any}} # These are requests sent where we are waiting for a response
-    cancellation_sources::Dict{String,CancellationTokens.CancellationTokenSource} # These are the cancellation sources for requests that are not finished processing
-    no_longer_needed_cancellation_sources::Channel{String}
+    cancellation_sources::Dict{Union{String,Int},CancellationTokens.CancellationTokenSource} # These are the cancellation sources for requests that are not finished processing
+    no_longer_needed_cancellation_sources::Channel{Union{String,Int}}
 
     err_handler::Union{Nothing,Function}
 
@@ -138,8 +138,8 @@ JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
         Channel{Any}(Inf),
         Channel{Request}(Inf),
         Dict{String,Channel{Any}}(),
-        Dict{String,CancellationTokens.CancellationTokenSource}(),
-        Channel{String}(Inf),
+        Dict{Union{String,Int},CancellationTokens.CancellationTokenSource}(),
+        Channel{Union{String,Int}}(Inf),
         err_handler,
         :idle,
         nothing,
