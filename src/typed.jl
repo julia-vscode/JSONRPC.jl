@@ -105,15 +105,15 @@ macro message_dispatcher(name, body)
 
                             if context===nothing
                                 if $(esc(i.args[2])) isa RequestType
-                                    res = $(esc(i.args[3]))(x, params, msg.token)
+                                    res = $(esc(i.args[3]))(params, msg.token)
                                 else
-                                    res = $(esc(i.args[3]))(x, params)
+                                    res = $(esc(i.args[3]))(params)
                                 end
                             else
                                 if $(esc(i.args[2])) isa RequestType
-                                    res = $(esc(i.args[3]))(x, params, context, msg.token)
+                                    res = $(esc(i.args[3]))(params, context, msg.token)
                                 else
-                                    res = $(esc(i.args[3]))(x, params, context)
+                                    res = $(esc(i.args[3]))(params, context)
                                 end
                             end
 
