@@ -6,7 +6,7 @@
 
     request1_type = JSONRPC.RequestType("request1", Foo, String)
     request2_type = JSONRPC.RequestType("request2", Nothing, String)
-    notify1_type = JSONRPC.NotificationType("notify1", String)
+    notify1_type = JSONRPC.NotificationType("notify1", Vector{String})
 
     global g_var = ""
 
@@ -19,20 +19,23 @@
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        msg_dispatcher[request1_type] = (conn, params) -> begin
+        msg_dispatcher[request1_type] = (conn, params, token) -> begin
             @test JSONRPC.is_currently_handling_msg(msg_dispatcher)
             params.fieldA == 1 ? "YES" : "NO"
         end
-        msg_dispatcher[request2_type] = (conn, params) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
-        msg_dispatcher[notify1_type] = (conn, params) -> global g_var = params
+        msg_dispatcher[request2_type] = (conn, params, token) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
+        msg_dispatcher[notify1_type] = (conn, params) -> global g_var = params[1]
 
         run(conn)
 
         for msg in conn
+            @info "Got a message, now dispatching" msg
             JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
+            @info "Finished dispatching"
         end
     catch err
         Base.display_error(stderr, err, catch_backtrace())
+        Base.flush(stderr)
     end
 
     wait(server_is_up)
@@ -42,7 +45,7 @@
 
     run(conn2)
 
-    JSONRPC.send(conn2, notify1_type, "TEST")
+    JSONRPC.send(conn2, notify1_type, ["TEST"])
 
     res = JSONRPC.send(conn2, request1_type, Foo(fieldA=1, fieldB="FOO"))
 
@@ -70,7 +73,7 @@
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        msg_dispatcher[request2_type] = (conn, params)->34 # The request type requires a `String` return, so this tests whether we get an error.
+        msg_dispatcher[request2_type] = (conn, params, token)->34 # The request type requires a `String` return, so this tests whether we get an error.
 
         run(conn)
 
@@ -79,6 +82,7 @@
         end
     catch err
         Base.display_error(stderr, err, catch_backtrace())
+        Base.flush(stderr)
     end
 
     wait(server_is_up)
@@ -117,18 +121,18 @@ end
 
     request1_type = JSONRPC.RequestType("request1", Foo, String)
     request2_type = JSONRPC.RequestType("request2", Nothing, String)
-    notify1_type = JSONRPC.NotificationType("notify1", String)
+    notify1_type = JSONRPC.NotificationType("notify1", Vector{String})
 
     global g_var = ""
 
     server_is_up = Base.Condition()
 
     JSONRPC.@message_dispatcher my_dispatcher begin
-        request1_type => (conn, params) -> begin
+        request1_type => (conn, params, token) -> begin
             params.fieldA == 1 ? "YES" : "NO"
         end
-        request2_type => (conn, params) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
-        notify1_type => (conn, params) -> global g_var = params
+        request2_type => (conn, params, token) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
+        notify1_type => (conn, params) -> global g_var = params[1]
     end
 
     server_task = @async try
@@ -154,7 +158,7 @@ end
 
     run(conn2)
 
-    JSONRPC.send(conn2, notify1_type, "TEST")
+    JSONRPC.send(conn2, notify1_type, ["TEST"])
 
     res = JSONRPC.send(conn2, request1_type, Foo(fieldA=1, fieldB="FOO"))
 
@@ -176,7 +180,7 @@ end
     server_is_up = Base.Condition()
 
     JSONRPC.@message_dispatcher my_dispatcher2 begin
-        request2_type => (conn, params) -> 34 # The request type requires a `String` return, so this tests whether we get an error.
+        request2_type => (conn, params, token) -> 34 # The request type requires a `String` return, so this tests whether we get an error.
     end
 
     server_task2 = @async try
