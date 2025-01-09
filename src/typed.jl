@@ -55,16 +55,20 @@ function Base.setindex!(dispatcher::MsgDispatcher, func::Function, message_type:
     dispatcher._handlers[message_type.method] = Handler(message_type, func)
 end
 
-function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg)
+function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Request)
     dispatcher._currentlyHandlingMsg = true
     try
-        method_name = msg["method"]
+        method_name = msg.method
         handler = get(dispatcher._handlers, method_name, nothing)
         if handler !== nothing
             param_type = get_param_type(handler.message_type)
-            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
+            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...)) : param_type(msg.params)
 
-            res = handler.func(x, params)
+            if handler.message_type isa RequestType
+                res = handler.func(x, params, msg.token)
+            else
+                res = handler.func(x, params)
+            end
 
             if handler.message_type isa RequestType
                 if res isa JSONRPCError
@@ -89,20 +93,28 @@ is_currently_handling_msg(d::MsgDispatcher) = d._currentlyHandlingMsg
 
 macro message_dispatcher(name, body)
     quote
-        function $(esc(name))(x, msg::Dict{String,Any}, context=nothing)
-            method_name = msg["method"]::String
+        function $(esc(name))(x, msg::Request, context=nothing)
+            method_name = msg.method
 
             $(
                 (
                     :(
                         if method_name == $(esc(i.args[2])).method
                             param_type = get_param_type($(esc(i.args[2])))
-                            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg["params"])...)) : param_type(msg["params"])
+                            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...)) : param_type(msg.params)
 
                             if context===nothing
-                                res = $(esc(i.args[3]))(x, params)
+                                if $(esc(i.args[2])) isa RequestType
+                                    res = $(esc(i.args[3]))(params, msg.token)
+                                else
+                                    res = $(esc(i.args[3]))(params)
+                                end
                             else
-                                res = $(esc(i.args[3]))(x, params, context)
+                                if $(esc(i.args[2])) isa RequestType
+                                    res = $(esc(i.args[3]))(params, context, msg.token)
+                                else
+                                    res = $(esc(i.args[3]))(params, context)
+                                end
                             end
 
                             if $(esc(i.args[2])) isa RequestType

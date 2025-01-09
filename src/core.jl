@@ -105,14 +105,23 @@ function Base.showerror(io::IO, ex::JSONRPCError)
     end
 end
 
+struct Request
+    method::String
+    params::Union{Nothing,Dict{String,Any},Vector{Any}}
+    id::Union{Nothing,String}
+    token::Union{CancellationTokens.CancellationToken,Nothing}
+end
+
 mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
     pipe_in::IOIn
     pipe_out::IOOut
 
     out_msg_queue::Channel{Any}
-    in_msg_queue::Channel{Any}
+    in_msg_queue::Channel{Request}
 
-    outstanding_requests::Dict{String,Channel{Any}}
+    outstanding_requests::Dict{String,Channel{Any}} # These are requests sent where we are waiting for a response
+    cancellation_sources::Dict{String,CancellationTokens.CancellationTokenSource} # These are the cancellation sources for requests that are not finished processing
+    no_longer_needed_cancellation_sources::Channel{String}
 
     err_handler::Union{Nothing,Function}
 
@@ -123,7 +132,18 @@ mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
 end
 
 JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
-    JSONRPCEndpoint(pipe_in, pipe_out, Channel{Any}(Inf), Channel{Any}(Inf), Dict{String,Channel{Any}}(), err_handler, :idle, nothing, nothing)
+    JSONRPCEndpoint(
+        pipe_in,
+        pipe_out,
+        Channel{Any}(Inf),
+        Channel{Request}(Inf),
+        Dict{String,Channel{Any}}(),
+        Dict{String,CancellationTokens.CancellationTokenSource}(),
+        Channel{String}(Inf),
+        err_handler,
+        :idle,
+        nothing,
+        nothing)
 
 function write_transport_layer(stream, response)
     response_utf8 = transcode(UInt8, response)
@@ -187,6 +207,13 @@ function Base.run(x::JSONRPCEndpoint)
 
     x.read_task = @async try
         while true
+            # First we delete any cancellation sources that are no longer needed. We do it this way to avoid a lock
+            while isready(x.no_longer_needed_cancellation_sources)
+                no_longer_needed_cs_id = take!(x.no_longer_needed_cancellation_sources)
+                delete!(x.cancellation_sources, no_longer_needed_cs_id)
+            end
+
+            # Now handle new messages
             message = read_transport_layer(x.pipe_in)
 
             if message === nothing || x.status == :closed
@@ -196,13 +223,38 @@ function Base.run(x::JSONRPCEndpoint)
             message_dict = JSON.parse(message)
 
             if haskey(message_dict, "method")
-                try
-                    put!(x.in_msg_queue, message_dict)
-                catch err
-                    if err isa InvalidStateException
-                        break
-                    else
-                        rethrow(err)
+                method_name = message_dict["method"]
+                params = get(message_dict, "params", nothing)
+                id = get(message_dict, "id", nothing)
+                cancel_source = id === nothing ? nothing : CancellationTokens.CancellationTokenSource()
+                cancel_token = cancel_source === nothing ? nothing : CancellationTokens.get_token(cancel_source)
+
+                if method_name == "\$/cancelRequest"
+                    id_of_cancelled_request = params["id"]
+                    cs = get(x.cancellation_sources, id_of_cancelled_request, nothing) # We might have sent the response already
+                    if cs !== nothing
+                        CancellationTokens.cancel(cs)
+                    end
+                else
+                    if id !== nothing
+                        x.cancellation_sources[id] = cancel_source
+                    end
+
+                    request = Request(
+                        method_name,
+                        params,
+                        id,
+                        cancel_token
+                    )
+
+                    try
+                        put!(x.in_msg_queue, request)
+                    catch err
+                        if err isa InvalidStateException
+                            break
+                        else
+                            rethrow(err)
+                        end
                     end
                 end
             else
@@ -294,20 +346,28 @@ function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
     end
 end
 
-function send_success_response(endpoint, original_request, result)
+function send_success_response(endpoint, original_request::Request, result)
     check_dead_endpoint!(endpoint)
 
-    response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "result" => result)
+    original_request.id === nothing && error("Cannot send a response to a notification.")
+
+    put!(endpoint.no_longer_needed_cancellation_sources, original_request.id)
+
+    response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "result" => result)
 
     response_json = JSON.json(response)
 
     put!(endpoint.out_msg_queue, response_json)
 end
 
-function send_error_response(endpoint, original_request, code, message, data)
+function send_error_response(endpoint, original_request::Request, code, message, data)
     check_dead_endpoint!(endpoint)
 
-    response = Dict("jsonrpc" => "2.0", "id" => original_request["id"], "error" => Dict("code" => code, "message" => message, "data" => data))
+    original_request.id === nothing && error("Cannot send a response to a notification.")
+
+    put!(endpoint.no_longer_needed_cancellation_sources, original_request.id)
+
+    response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "error" => Dict("code" => code, "message" => message, "data" => data))
 
     response_json = JSON.json(response)
 
