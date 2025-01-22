@@ -96,7 +96,9 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                 end
             end
         else
-
+            if is_request
+                send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method '$method_name'.", nothing)
+            end
             error("Unknown method $method_name.")
         end
     finally
@@ -164,6 +166,10 @@ macro message_dispatcher(name, body)
                 )...
             )
 
+            if is_request
+                send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method '$method_name'.", nothing)
+            end
+            
             error("Unknown method $method_name.")
         end
     end
