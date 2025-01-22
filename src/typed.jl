@@ -110,13 +110,27 @@ macro message_dispatcher(name, body)
     quote
         function $(esc(name))(x, msg::Request, context=nothing)
             method_name = msg.method
+            is_request = msg.id !== nothing
 
             $(
                 (
                     :(
                         if method_name == $(esc(i.args[2])).method
                             param_type = get_param_type($(esc(i.args[2])))
-                            params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...)) : param_type(msg.params)
+                            params = try
+                                if param_type === Nothing
+                                    nothing
+                                elseif param_type <: NamedTuple
+                                    convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...))
+                                else
+                                    param_type(msg.params)
+                                end
+                            catch err
+                                if is_request
+                                    send_error_response(x, msg, INVALID_PARAMS, "Failed to parse parameters.", nothing)
+                                end
+                                rethrow(err)
+                            end
 
                             if context===nothing
                                 if $(esc(i.args[2])) isa RequestType
