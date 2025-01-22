@@ -59,6 +59,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
     dispatcher._currentlyHandlingMsg = true
     try
         method_name = msg.method
+        is_request = msg.id !== nothing
         handler = get(dispatcher._handlers, method_name, nothing)
         if handler !== nothing
             param_type = get_param_type(handler.message_type)
@@ -71,7 +72,9 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                     param_type(msg.params)
                 end
             catch err
-                send_error_response(x, msg, INVALID_PARAMS, "Failed to parse parameters.", nothing)
+                if is_request
+                    send_error_response(x, msg, INVALID_PARAMS, "Failed to parse parameters.", nothing)
+                end
                 rethrow(err)
             end
 
@@ -93,6 +96,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                 end
             end
         else
+
             error("Unknown method $method_name.")
         end
     finally
