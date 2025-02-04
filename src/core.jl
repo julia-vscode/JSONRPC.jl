@@ -293,7 +293,7 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
 
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
 
-    message_json = JSON.json(message)
+    message_json = sprint(JSON.show_json, x.serialization, message)
 
     put!(x.out_msg_queue, message_json)
 
@@ -309,7 +309,7 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
     response_channel = Channel{Any}(1)
     x.outstanding_requests[id] = response_channel
 
-    message_json = rpcjson(x.serialization, message)
+    message_json = sprint(JSON.show_json, x.serialization, message)
 
     put!(x.out_msg_queue, message_json)
 
@@ -358,7 +358,7 @@ function send_success_response(endpoint, original_request::Request, result)
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "result" => result)
 
-    response_json = rpcjson(endpoint.serialization, response)
+    response_json = sprint(JSON.show_json, endpoint.serialization, response)
 
     put!(endpoint.out_msg_queue, response_json)
 end
@@ -372,7 +372,7 @@ function send_error_response(endpoint, original_request::Request, code, message,
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "error" => Dict("code" => code, "message" => message, "data" => data))
 
-    response_json = rpcjson(endpoint.serialization, response)
+    response_json = sprint(JSON.show_json, endpoint.serialization, response)
 
     put!(endpoint.out_msg_queue, response_json)
 end
@@ -406,10 +406,3 @@ function check_dead_endpoint!(endpoint)
     status === :running && return
     error("Endpoint is not running, the current state is $(status).")
 end
-
-function Base.print(io::IO, serialization_obj::Tuple{JSON.Serialization,Any})
-    serialization, obj = serialization_obj
-    JSON.show_json(io, serialization, obj)
-end
-Base.print(serialization::JSON.Serialization, a) = print(stdout, (serialization, a))
-rpcjson(serialization::JSON.Serialization, a) = sprint(print, (serialization, a))
