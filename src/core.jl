@@ -335,7 +335,7 @@ function get_next_message(endpoint::JSONRPCEndpoint)
     return msg
 end
 
-function Base.iterate(endpoint::JSONRPCEndpoint, state=nothing)
+function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
     check_dead_endpoint!(endpoint)
 
     try
