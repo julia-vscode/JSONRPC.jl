@@ -17,7 +17,7 @@
 
     socket1, socket2 = NamedPipes.get_named_pipe()
 
-    task_done = Base.Event()
+    task_done = Channel(1)
 
     messages_back = Channel(Inf)
 
@@ -39,7 +39,7 @@
 
         close(ep2)
     finally
-        notify(task_done)
+        put!(task_done, true)
     catch err
         Base.display_error(err, catch_backtrace())
     end   

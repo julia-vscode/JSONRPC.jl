@@ -27,13 +27,13 @@ end
     function get_named_pipe()
         socket_name = JSONRPC.generate_pipe_name()
 
-        server_is_up = Base.Event()
+        server_is_up = Channel(1)
 
         socket1_channel = Channel(1)
 
         @async try
             server = listen(socket_name)
-            notify(server_is_up)
+            put!(server_is_up, true)
             socket1 = accept(server)
 
             put!(socket1_channel, socket1)
