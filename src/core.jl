@@ -112,7 +112,7 @@ struct Request
     token::Union{CancellationTokens.CancellationToken,Nothing}
 end
 
-mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
+mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization}
     pipe_in::IOIn
     pipe_out::IOOut
 
@@ -129,9 +129,11 @@ mutable struct JSONRPCEndpoint{IOIn <: IO,IOOut <: IO}
 
     read_task::Union{Nothing,Task}
     write_task::Union{Nothing,Task}
+
+    serialization::S
 end
 
-JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
+JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing, serialization::JSON.Serialization=JSON.StandardSerialization()) =
     JSONRPCEndpoint(
         pipe_in,
         pipe_out,
@@ -143,7 +145,8 @@ JSONRPCEndpoint(pipe_in, pipe_out, err_handler = nothing) =
         err_handler,
         :idle,
         nothing,
-        nothing)
+        nothing,
+        serialization)
 
 function write_transport_layer(stream, response)
     response_utf8 = transcode(UInt8, response)
@@ -290,7 +293,7 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
 
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
 
-    message_json = JSON.json(message)
+    message_json = sprint(JSON.show_json, x.serialization, message)
 
     put!(x.out_msg_queue, message_json)
 
@@ -306,7 +309,7 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
     response_channel = Channel{Any}(1)
     x.outstanding_requests[id] = response_channel
 
-    message_json = JSON.json(message)
+    message_json = sprint(JSON.show_json, x.serialization, message)
 
     put!(x.out_msg_queue, message_json)
 
@@ -355,7 +358,7 @@ function send_success_response(endpoint, original_request::Request, result)
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "result" => result)
 
-    response_json = JSON.json(response)
+    response_json = sprint(JSON.show_json, endpoint.serialization, response)
 
     put!(endpoint.out_msg_queue, response_json)
 end
@@ -369,7 +372,7 @@ function send_error_response(endpoint, original_request::Request, code, message,
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "error" => Dict("code" => code, "message" => message, "data" => data))
 
-    response_json = JSON.json(response)
+    response_json = sprint(JSON.show_json, endpoint.serialization, response)
 
     put!(endpoint.out_msg_queue, response_json)
 end
