@@ -20,8 +20,8 @@ get_param_type(::NotificationType{TPARAM}) where {TPARAM} = TPARAM
 get_param_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TPARAM
 get_return_type(::RequestType{TPARAM,TR}) where {TPARAM,TR} = TR
 
-function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM) where {TPARAM,TR}
-    res = send_request(x, request.method, params)
+function send(x::JSONRPCEndpoint, request::RequestType{TPARAM,TR}, params::TPARAM; server_token::Union{Nothing,CancellationTokens.CancellationToken}=nothing, client_token::Union{Nothing,CancellationTokens.CancellationToken}=nothing) where {TPARAM,TR}
+    res = send_request(x, request.method, params; server_token=server_token, client_token=client_token)
     return typed_res(res, TR)::TR
 end
 
