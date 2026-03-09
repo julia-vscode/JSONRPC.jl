@@ -51,7 +51,7 @@ mutable struct MsgDispatcher
     end
 end
 
-function Base.setindex!(dispatcher::MsgDispatcher, func::Function, message_type::AbstractMessageType)
+function Base.setindex!(dispatcher::MsgDispatcher, @nospecialize(func::Function), @nospecialize(message_type::AbstractMessageType))
     dispatcher._handlers[message_type.method] = Handler(message_type, func)
 end
 
@@ -77,7 +77,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                     send_success_response(x, msg, res)
                 else
                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                    send_error_response(x, msg, -32603, error_msg, nothing)                    
+                    send_error_response(x, msg, -32603, error_msg, nothing)
                     error(error_msg)
                 end
             end
@@ -124,7 +124,7 @@ macro message_dispatcher(name, body)
                                     send_success_response(x, msg, res)
                                 else
                                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                                    send_error_response(x, msg, -32603, error_msg, nothing)                    
+                                    send_error_response(x, msg, -32603, error_msg, nothing)
                                     error(error_msg)
                                 end
                             end

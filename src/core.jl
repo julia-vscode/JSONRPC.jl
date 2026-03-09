@@ -268,7 +268,7 @@ function Base.run(x::JSONRPCEndpoint)
                 put!(channel_for_response, message_dict)
             end
         end
-        
+
         close(x.in_msg_queue)
 
         for i in values(x.outstanding_requests)
@@ -288,7 +288,7 @@ function Base.run(x::JSONRPCEndpoint)
     x.status = :running
 end
 
-function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
+function send_notification(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(params))
     check_dead_endpoint!(x)
 
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
@@ -300,7 +300,7 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, params)
     return nothing
 end
 
-function send_request(x::JSONRPCEndpoint, method::AbstractString, params)
+function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(params))
     check_dead_endpoint!(x)
 
     id = string(UUIDs.uuid4())
@@ -349,7 +349,7 @@ function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
     end
 end
 
-function send_success_response(endpoint, original_request::Request, result)
+function send_success_response(endpoint, original_request::Request, @nospecialize(result))
     check_dead_endpoint!(endpoint)
 
     original_request.id === nothing && error("Cannot send a response to a notification.")
@@ -363,7 +363,7 @@ function send_success_response(endpoint, original_request::Request, result)
     put!(endpoint.out_msg_queue, response_json)
 end
 
-function send_error_response(endpoint, original_request::Request, code, message, data)
+function send_error_response(endpoint, original_request::Request, @nospecialize(code), @nospecialize(message), @nospecialize(data))
     check_dead_endpoint!(endpoint)
 
     original_request.id === nothing && error("Cannot send a response to a notification.")
@@ -397,6 +397,7 @@ function Base.flush(endpoint::JSONRPCEndpoint)
     check_dead_endpoint!(endpoint)
 
     while isready(endpoint.out_msg_queue)
+        istaskdone(endpoint.write_task) && break
         yield()
     end
 end
