@@ -228,11 +228,15 @@ function Base.run(x::JSONRPCEndpoint)
             close(x.out_msg_queue)
         end
     catch err
-        bt = catch_backtrace()
-        if x.err_handler !== nothing
-            x.err_handler(err, bt)
+        if err isa Base.IOError
+            # Stream was closed, this is expected during shutdown
         else
-            Base.display_error(stderr, err, bt)
+            bt = catch_backtrace()
+            if x.err_handler !== nothing
+                x.err_handler(err, bt)
+            else
+                Base.display_error(stderr, err, bt)
+            end
         end
     end
 
