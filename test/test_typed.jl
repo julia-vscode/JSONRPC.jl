@@ -215,3 +215,153 @@ end
     fetch(server_task)
 
 end
+
+@testitem "dispatch_msg error responses" setup=[TestStructs] begin
+    using Sockets
+    using .TestStructs: Foo
+
+    request1_type = JSONRPC.RequestType("request1", Foo, String)
+    request_throwing_type = JSONRPC.RequestType("throwing_request", Nothing, String)
+
+    global_socket_name = JSONRPC.generate_pipe_name()
+    server_is_up = Base.Condition()
+
+    server_task = @async try
+        server = listen(global_socket_name)
+        notify(server_is_up)
+        sock = accept(server)
+        conn = JSONRPC.JSONRPCEndpoint(sock, sock)
+        msg_dispatcher = JSONRPC.MsgDispatcher()
+
+        msg_dispatcher[request1_type] = (conn, params, token) -> params.fieldA == 1 ? "YES" : "NO"
+        msg_dispatcher[request_throwing_type] = (conn, params, token) -> error("handler exploded")
+
+        run(conn)
+
+        for msg in conn
+            try
+                JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
+            catch
+                # Errors are rethrown after sending error response; swallow them here
+            end
+        end
+    catch err
+        Base.display_error(stderr, err, catch_backtrace())
+        Base.flush(stderr)
+    end
+
+    wait(server_is_up)
+
+    sock2 = connect(global_socket_name)
+    conn2 = JSONRPC.JSONRPCEndpoint(sock2, sock2)
+    run(conn2)
+
+    # Test 1: Unknown method → METHOD_NOT_FOUND (-32601)
+    unknown_type = JSONRPC.RequestType("nonexistent", Nothing, String)
+    try
+        JSONRPC.send(conn2, unknown_type, nothing)
+        @test false  # should not reach here
+    catch err
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == -32601
+    end
+
+    # Test 2: Invalid params → INVALID_PARAMS (-32602)
+    # Send raw request with wrong params to trigger param parse failure
+    try
+        JSONRPC.send_request(conn2, "request1", nothing)
+        @test false
+    catch err
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == -32602
+    end
+
+    # Test 3: Handler throws → INTERNAL_ERROR (-32603)
+    try
+        JSONRPC.send(conn2, request_throwing_type, nothing)
+        @test false
+    catch err
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == -32603
+    end
+
+    close(conn2)
+    close(sock2)
+
+    fetch(server_task)
+end
+
+@testitem "Static dispatcher error responses" setup=[TestStructs] begin
+    using Sockets
+    using .TestStructs: Foo
+
+    request1_type = JSONRPC.RequestType("request1", Foo, String)
+    request_throwing_type = JSONRPC.RequestType("throwing_request", Nothing, String)
+
+    JSONRPC.@message_dispatcher my_err_dispatcher begin
+        request1_type => (params, token) -> params.fieldA == 1 ? "YES" : "NO"
+        request_throwing_type => (params, token) -> error("handler exploded")
+    end
+
+    global_socket_name = JSONRPC.generate_pipe_name()
+    server_is_up = Base.Condition()
+
+    server_task = @async try
+        server = listen(global_socket_name)
+        notify(server_is_up)
+        sock = accept(server)
+        conn = JSONRPC.JSONRPCEndpoint(sock, sock)
+
+        run(conn)
+
+        for msg in conn
+            try
+                my_err_dispatcher(conn, msg)
+            catch
+                # Errors are rethrown after sending error response; swallow them here
+            end
+        end
+    catch err
+        Base.display_error(stderr, err, catch_backtrace())
+        Base.flush(stderr)
+    end
+
+    wait(server_is_up)
+
+    sock2 = connect(global_socket_name)
+    conn2 = JSONRPC.JSONRPCEndpoint(sock2, sock2)
+    run(conn2)
+
+    # Test 1: Unknown method → METHOD_NOT_FOUND (-32601)
+    unknown_type = JSONRPC.RequestType("nonexistent", Nothing, String)
+    try
+        JSONRPC.send(conn2, unknown_type, nothing)
+        @test false
+    catch err
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == -32601
+    end
+
+    # Test 2: Invalid params → INVALID_PARAMS (-32602)
+    try
+        JSONRPC.send_request(conn2, "request1", nothing)
+        @test false
+    catch err
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == -32602
+    end
+
+    # Test 3: Handler throws → INTERNAL_ERROR (-32603)
+    try
+        JSONRPC.send(conn2, request_throwing_type, nothing)
+        @test false
+    catch err
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == -32603
+    end
+
+    close(conn2)
+    close(sock2)
+
+    fetch(server_task)
+end
