@@ -29,9 +29,7 @@
         run(conn)
 
         for msg in conn
-            @info "Got a message, now dispatching" msg
             JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
-            @info "Finished dispatching"
         end
     catch err
         Base.display_error(stderr, err, catch_backtrace())
