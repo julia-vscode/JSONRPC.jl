@@ -1,17 +1,14 @@
 @testitem "Custom JSON serialization" setup=[NamedPipes] begin
     using JSON
-    using JSON: StructuralContext, begin_object, show_pair, end_object, show_json, Serializations.StandardSerialization
 
-    struct OurSerialization <: JSON.Serializations.CommonSerialization end
+    struct OurStyle <: JSON.JSONStyle end
 
     struct OurStruct
         a::String
         b::String
     end
 
-    function JSON.show_json(io::StructuralContext, s::OurSerialization, f::OurStruct)
-        show_json(io, StandardSerialization(), "$(f.a):$(f.b)")
-    end
+    JSON.lower(f::OurStruct) = "$(f.a):$(f.b)"
 
     x = OurStruct("Hello", "World")
 
@@ -22,7 +19,7 @@
     messages_back = Channel(Inf)
 
     @async try
-        ep2 = JSONRPCEndpoint(socket1, socket1, nothing, OurSerialization())
+        ep2 = JSONRPCEndpoint(socket1, socket1, nothing, OurStyle())
         
         run(ep2)
 
@@ -44,7 +41,7 @@
         Base.display_error(err, catch_backtrace())
     end   
 
-    ep1 = JSONRPCEndpoint(socket2, socket2, nothing, OurSerialization())
+    ep1 = JSONRPCEndpoint(socket2, socket2, nothing, OurStyle())
 
     run(ep1)
 
