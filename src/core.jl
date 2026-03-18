@@ -107,12 +107,12 @@ end
 
 struct Request
     method::String
-    params::Union{Nothing,Dict{String,Any},Vector{Any}}
+    params::Union{Nothing,JSON.Object{String,Any},Vector{Any}}
     id::Union{Nothing,String,Int}
     token::Union{CancellationTokens.CancellationToken,Nothing}
 end
 
-mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization}
+mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.JSONStyle}
     pipe_in::IOIn
     pipe_out::IOOut
 
@@ -132,10 +132,10 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization}
     read_task::Union{Nothing,Task}
     write_task::Union{Nothing,Task}
 
-    serialization::S
+    style::S
 end
 
-JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing, serialization::JSON.Serialization=JSON.StandardSerialization()) =
+JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing, style::JSON.JSONStyle=JSON.JSONWriteStyle()) =
     JSONRPCEndpoint(
         pipe_in,
         pipe_out,
@@ -149,7 +149,7 @@ JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing, serialization::JSON.Seri
         :idle,
         nothing,
         nothing,
-        serialization)
+        style)
 
 function write_transport_layer(stream, response)
     response_utf8 = transcode(UInt8, response)
@@ -339,7 +339,7 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, @nospecia
 
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
 
-    message_json = sprint(JSON.show_json, x.serialization, message)
+    message_json = JSON.json(message; style=x.style)
 
     put!(x.out_msg_queue, message_json)
 
@@ -355,7 +355,7 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
     response_channel = Channel{Any}(1)
     x.outstanding_requests[id] = response_channel
 
-    message_json = sprint(JSON.show_json, x.serialization, message)
+    message_json = JSON.json(message; style=x.style)
 
     put!(x.out_msg_queue, message_json)
 
@@ -464,7 +464,7 @@ function send_success_response(endpoint, original_request::Request, @nospecializ
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "result" => result)
 
-    response_json = sprint(JSON.show_json, endpoint.serialization, response)
+    response_json = JSON.json(response; style=endpoint.style)
 
     put!(endpoint.out_msg_queue, response_json)
 end
@@ -478,7 +478,7 @@ function send_error_response(endpoint, original_request::Request, @nospecialize(
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "error" => Dict("code" => code, "message" => message, "data" => data))
 
-    response_json = sprint(JSON.show_json, endpoint.serialization, response)
+    response_json = JSON.json(response; style=endpoint.style)
 
     put!(endpoint.out_msg_queue, response_json)
 end

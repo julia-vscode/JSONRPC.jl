@@ -8,7 +8,7 @@ include("interface_def.jl")
 function _precompile_()
     ccall(:jl_generating_output, Cint, ()) == 1 || return nothing
 
-    E = JSONRPCEndpoint{Base.PipeEndpoint, Base.PipeEndpoint, JSON.Serializations.StandardSerialization}
+    E = JSONRPCEndpoint{Base.PipeEndpoint, Base.PipeEndpoint, JSON.JSONWriteStyle}
     precompile(Base.run, (E,))
     precompile(send_notification, (E, String, Any))
     precompile(send_request, (E, String, Any))
