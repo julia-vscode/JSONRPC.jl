@@ -74,7 +74,8 @@ end
 
     # Send a request but don't wait for a response — close the server instead
     client_task = @async try
-        JSONRPC.send(client, request_type, nothing)
+        result = JSONRPC.send(client, request_type, nothing)
+        result
     catch err
         err
     end
