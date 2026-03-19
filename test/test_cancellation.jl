@@ -230,22 +230,24 @@ end
     JSONRPC.start(server)
     JSONRPC.start(client)
 
+    server_task_err = Channel{Any}(1)
     server_task = @async try
         for msg in server
             @async JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
         end
     catch err
-        Base.display_error(stderr, err, catch_backtrace())
+        put!(server_task_err, err)
     end
 
     # Create a client token and cancel it after a short delay
     client_src = CancellationTokenSource()
     client_token = get_token(client_src)
 
+    client_task_err = Channel{Any}(1)
     client_task = @async try
         JSONRPC.send(client, request_type, nothing; client_token=client_token)
     catch err
-        err
+        put!(client_task_err, err)
     end
 
     # Give time for request to arrive
@@ -257,6 +259,7 @@ end
     result = fetch(client_task)
     @test result isa JSONRPC.JSONRPCError
     @test occursin("cancelled by client", result.msg)
+    @test result.code == -32603
 
     # The server should NOT have received a $/cancelRequest
     server_cancel_status = take!(server_got_cancel_request)
@@ -266,6 +269,11 @@ end
     close(socket2)
     close(server)
     close(socket1)
+
+    @test fetch(server_task_err) isa JSONRPC.TransportError
+    c_err = fetch(client_task_err)
+    @test c_err isa JSONRPC.JSONRPCError
+    @test c_err.code == -32603
 end
 
 @testitem "dual-token: both tokens" setup=[NamedPipes] begin

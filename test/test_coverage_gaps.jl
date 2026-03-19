@@ -1226,6 +1226,7 @@ end
 
     # Manually register a cancellation source for a fake request id
     cs = CancellationTokens.CancellationTokenSource()
+    cst = CancellationTokens.get_token(cs)
     ep.cancellation_sources["test-id-999"] = cs
 
     # Send a $/cancelRequest from the remote side
@@ -1238,7 +1239,7 @@ end
     sleep(0.3)
 
     # The cancellation source should have been cancelled
-    @test CancellationTokens.is_cancellation_requested(cs)
+    @test CancellationTokens.is_cancellation_requested(cst)
 
     close(ep)
     close(socket2)

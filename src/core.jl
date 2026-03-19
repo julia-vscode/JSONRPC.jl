@@ -8,7 +8,8 @@ Fields:
  * msg::AbstractString
  * data::Any
 
-See Section 5.1 of the JSON RPC 2.0 specification for more information.
+See [Section 5.1 of the JSON RPC 2.0 specification](https://www.jsonrpc.org/specification#error_object)
+for more information.
 """
 struct JSONRPCError <: Exception
     code::Int
@@ -270,6 +271,8 @@ function start(x::JSONRPCEndpoint)
 
     x.status = status_running
 
+    endpoint_token = CancellationTokens.get_token(x.endpoint_cancellation_source)
+
     x.write_task = @async try
         try
             for msg in x.out_msg_queue
@@ -285,15 +288,13 @@ function start(x::JSONRPCEndpoint)
         end
     catch err
         if err isa Base.IOError
-            if !CancellationTokens.is_cancellation_requested(x.endpoint_cancellation_source)
+            if !CancellationTokens.is_cancellation_requested(endpoint_token)
                 x.err === nothing && (x.err = TransportError("Write task IOError", err))
             end
         else
             x.err === nothing && (x.err = TransportError("Write task failed", err))
         end
     end
-
-    endpoint_token = CancellationTokens.get_token(x.endpoint_cancellation_source)
 
     x.read_task = @async try
         try
@@ -391,7 +392,7 @@ function start(x::JSONRPCEndpoint)
         end
     catch err
         if err isa Base.IOError
-            if !CancellationTokens.is_cancellation_requested(x.endpoint_cancellation_source)
+            if !CancellationTokens.is_cancellation_requested(endpoint_token)
                 x.err === nothing && (x.err = TransportError("Read task IOError", err))
                 x.status = status_errored
             end
@@ -509,7 +510,7 @@ function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,Cancel
         return msg
     catch err
         if err isa CancellationTokens.OperationCanceledException || err isa InvalidStateException
-            if token !== nothing && CancellationTokens.is_cancellation_requested(token) && !CancellationTokens.is_cancellation_requested(endpoint.endpoint_cancellation_source)
+            if token !== nothing && CancellationTokens.is_cancellation_requested(token) && !CancellationTokens.is_cancellation_requested(endpoint_token)
                 throw(JSONRPCError(INTERNAL_ERROR, "get_next_message cancelled by token", nothing))
             end
             endpoint.err !== nothing && throw(endpoint.err)
@@ -599,9 +600,11 @@ end
 function Base.flush(endpoint::JSONRPCEndpoint)
     check_dead_endpoint!(endpoint)
 
+    token = CancellationTokens.get_token(endpoint.endpoint_cancellation_source)
+
     while isready(endpoint.out_msg_queue)
         istaskdone(endpoint.write_task) && break
-        CancellationTokens.is_cancellation_requested(endpoint.endpoint_cancellation_source) && break
+        CancellationTokens.is_cancellation_requested(token) && break
         yield()
     end
 end
