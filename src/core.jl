@@ -249,7 +249,7 @@ function read_transport_layer(stream::Union{Sockets.TCPSocket,Sockets.PipeEndpoi
             return nothing
         end
         message_length = parse(Int, header_dict["Content-Length"])
-        message_str = String(read(stream, message_length))
+        message_str = String(read(stream, message_length, token))
         if ncodeunits(message_str) != message_length
             # Truncated read — the remote process likely crashed mid-write
             return nothing
@@ -325,7 +325,12 @@ function start(x::JSONRPCEndpoint)
                     break
                 end
 
-                if haskey(message_dict, "method")
+                if !_is_valid(message_dict)
+                    x.err === nothing && (x.err = TransportError("Received malformed message", nothing))
+                    break
+                end
+
+                if _is_request(message_dict)
                     method_name = message_dict["method"]
                     params = get(message_dict, "params", nothing)
                     id = get(message_dict, "id", nothing)
@@ -333,7 +338,13 @@ function start(x::JSONRPCEndpoint)
                     cancel_token = cancel_source === nothing ? nothing : CancellationTokens.get_token(cancel_source)
 
                     if method_name == "\$/cancelRequest"
-                        id_of_cancelled_request = params["id"]
+                        # this is a custom protocol extension and as such we should be very
+                        # careful to not crash here; a malformed notification may not have
+                        # params or params["id"]
+                        params === nothing && continue
+                        id_of_cancelled_request = get(params, "id", nothing)
+                        id_of_cancelled_request === nothing && continue
+
                         cs = get(x.cancellation_sources, id_of_cancelled_request, nothing) # We might have sent the response already
                         if cs !== nothing
                             CancellationTokens.cancel(cs)
@@ -343,12 +354,7 @@ function start(x::JSONRPCEndpoint)
                             x.cancellation_sources[id] = cancel_source
                         end
 
-                        request = Request(
-                            method_name,
-                            params,
-                            id,
-                            cancel_token
-                        )
+                        request = Request(method_name, params, id, cancel_token)
 
                         try
                             put!(x.in_msg_queue, request)
@@ -360,8 +366,7 @@ function start(x::JSONRPCEndpoint)
                             end
                         end
                     end
-                else
-                    # This must be a response
+                elseif _is_response(message_dict)
                     id_of_request = message_dict["id"]
 
                     channel_for_response = get(x.outstanding_requests, id_of_request, nothing)
@@ -402,6 +407,10 @@ function start(x::JSONRPCEndpoint)
         end
     end
 end
+
+_is_response(message_dict::AbstractDict) = haskey(message_dict, "id") && (haskey(message_dict, "result") || haskey(message_dict, "error"))
+_is_request(message_dict::AbstractDict) = haskey(message_dict, "method")
+_is_valid(message_dict::AbstractDict) = get(message_dict, "jsonrpc", "") == "2.0" && xor(_is_response(message_dict), _is_request(message_dict))
 
 function send_notification(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(params))
     check_dead_endpoint!(x)
@@ -481,7 +490,8 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
             error_data = get(response["error"], "data", nothing)
             throw(JSONRPCError(error_code, error_msg, error_data))
         else
-            throw(JSONRPCError(0, "ERROR AT THE TRANSPORT LEVEL", nothing))
+            # this should never happen since we guard against it in the reader task
+            throw(TransportError("Received malformed response", nothing))
         end
     finally
         delete!(x.outstanding_requests, id)

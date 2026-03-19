@@ -969,7 +969,7 @@ end
 @testitem "send_request: transport-level error (response missing result and error)" setup=[NamedPipes] begin
     using JSON
     # When a response has neither "result" nor "error", send_request should
-    # throw JSONRPCError with "ERROR AT THE TRANSPORT LEVEL"
+    # throw TransportError with "Received malformed message"
     socket1, socket2 = NamedPipes.get_named_pipe()
     ep = JSONRPC.JSONRPCEndpoint(socket1, socket1)
     JSONRPC.start(ep)
@@ -998,9 +998,8 @@ end
     sleep(0.3)
 
     wait(t)
-    @test err_ref[] isa JSONRPC.JSONRPCError
-    @test err_ref[].code == 0
-    @test occursin("TRANSPORT LEVEL", err_ref[].msg)
+    @test err_ref[] isa JSONRPC.TransportError
+    @test occursin("malformed", lowercase(err_ref[].msg))
     close(ep)
     close(socket2)
 end
