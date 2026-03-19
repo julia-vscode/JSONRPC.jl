@@ -206,7 +206,7 @@ function write_transport_layer(stream, response)
     flush(stream)
 end
 
-function read_transport_layer(stream)
+function read_transport_layer(stream, token::CancellationTokens.CancellationToken)
     try
         header_dict = Dict{String,String}()
         line = chomp(readline(stream))
@@ -278,12 +278,7 @@ function start(x::JSONRPCEndpoint)
     x.write_task = @async try
         try
             for msg in x.out_msg_queue
-                if isopen(x.pipe_out)
-                    write_transport_layer(x.pipe_out, msg)
-                else
-                    x.err === nothing && (x.err = TransportError("Write failed: output pipe is closed", nothing))
-                    break
-                end
+                write_transport_layer(x.pipe_out, msg)
             end
         finally
             close(x.out_msg_queue)
@@ -308,11 +303,7 @@ function start(x::JSONRPCEndpoint)
                 end
 
                 # Now handle new messages
-                message = if x.pipe_in isa Union{Sockets.TCPSocket,Sockets.PipeEndpoint}
-                    read_transport_layer(x.pipe_in, endpoint_token)
-                else
-                    read_transport_layer(x.pipe_in)
-                end
+                message = read_transport_layer(x.pipe_in, endpoint_token)
 
                 if message === nothing
                     # EOF while there are outstanding requests and the endpoint wasn't
@@ -458,18 +449,13 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
     put!(x.out_msg_queue, message_json)
 
     # Set up server token monitoring: when cancelled, send $/cancelRequest but keep waiting
-    server_monitor_task = nothing
+    server_cancel_registration = nothing
     if server_token !== nothing
-        server_monitor_task = @async try
-            CancellationTokens.wait(server_token)
+        server_cancel_registration = CancellationTokens.register(server_token) do
             try
                 send_notification(x, "\$/cancelRequest", Dict("id" => id))
             catch
                 # Endpoint may already be closed
-            end
-        catch err
-            if !(err isa CancellationTokens.WaitCanceledException)
-                rethrow(err)
             end
         end
     end
@@ -526,12 +512,8 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
         else
             delete!(x.outstanding_requests, id)
         end
-        if server_monitor_task !== nothing
-            try
-                schedule(server_monitor_task, CancellationTokens.WaitCanceledException(), error=true)
-            catch
-                # Task may have already completed
-            end
+        if server_cancel_registration !== nothing
+            close(server_cancel_registration)
         end
     end
 end

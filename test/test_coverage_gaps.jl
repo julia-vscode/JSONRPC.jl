@@ -929,11 +929,13 @@ end
 end
 
 @testitem "read_transport_layer rethrow: invalid Content-Length (non-token)" begin
+    using CancellationTokens
     # Trigger the rethrow(err) path in read_transport_layer(stream) by
     # writing a Content-Length header with a non-integer value.
     # parse(Int, " abc") throws ArgumentError, which is not IOError → rethrow
     buf = IOBuffer("Content-Length: abc\r\n\r\n")
-    @test_throws ArgumentError JSONRPC.read_transport_layer(buf)
+    token = CancellationTokens.get_token(CancellationTokens.CancellationTokenSource())
+    @test_throws ArgumentError JSONRPC.read_transport_layer(buf, token)
 end
 
 @testitem "read_transport_layer rethrow: invalid Content-Length (token)" setup=[NamedPipes] begin
@@ -967,7 +969,7 @@ end
 end
 
 @testitem "send_request: transport-level error (response missing result and error)" setup=[NamedPipes] begin
-    using JSON
+    using JSON, CancellationTokens
     # When a response has neither "result" nor "error", send_request should
     # throw TransportError with "Received malformed message"
     socket1, socket2 = NamedPipes.get_named_pipe()
@@ -987,7 +989,8 @@ end
 
     # Wait a bit for the request to be sent, then read it from the remote side
     sleep(0.2)
-    msg_str = JSONRPC.read_transport_layer(socket2)
+    _token = CancellationTokens.get_token(CancellationTokens.CancellationTokenSource())
+    msg_str = JSONRPC.read_transport_layer(socket2, _token)
     @test msg_str !== nothing
     msg = JSON.parse(msg_str)
     id = msg["id"]
@@ -1090,7 +1093,7 @@ end
 end
 
 @testitem "send_request: error response from server" setup=[NamedPipes] begin
-    using JSON
+    using JSON, CancellationTokens
     # Exercise the response["error"] branch of send_request with error data
     socket1, socket2 = NamedPipes.get_named_pipe()
     ep = JSONRPC.JSONRPCEndpoint(socket1, socket1)
@@ -1106,7 +1109,8 @@ end
     end
 
     sleep(0.2)
-    msg_str = JSONRPC.read_transport_layer(socket2)
+    _token = CancellationTokens.get_token(CancellationTokens.CancellationTokenSource())
+    msg_str = JSONRPC.read_transport_layer(socket2, _token)
     msg = JSON.parse(msg_str)
     id = msg["id"]
 
@@ -1151,7 +1155,8 @@ end
 
     # Read the original request
     sleep(0.2)
-    msg_str = JSONRPC.read_transport_layer(socket2)
+    _token = CancellationTokens.get_token(CancellationTokens.CancellationTokenSource())
+    msg_str = JSONRPC.read_transport_layer(socket2, _token)
     msg = JSON.parse(msg_str)
     id = msg["id"]
 
@@ -1160,7 +1165,7 @@ end
     sleep(0.2)
 
     # Read the $/cancelRequest notification
-    cancel_str = JSONRPC.read_transport_layer(socket2)
+    cancel_str = JSONRPC.read_transport_layer(socket2, _token)
     @test cancel_str !== nothing
     cancel_msg = JSON.parse(cancel_str)
     @test cancel_msg["method"] == "\$/cancelRequest"
@@ -1199,7 +1204,8 @@ end
 
     # Wait for request to be sent
     sleep(0.2)
-    msg_str = JSONRPC.read_transport_layer(socket2)
+    _token = CancellationTokens.get_token(CancellationTokens.CancellationTokenSource())
+    msg_str = JSONRPC.read_transport_layer(socket2, _token)
     @test msg_str !== nothing
 
     # Cancel the client token — send_request should throw
@@ -1314,13 +1320,14 @@ end
     sleep(0.3)
 
     # Read the responses from the remote side
-    resp1_str = JSONRPC.read_transport_layer(socket2)
+    _token = CancellationTokens.get_token(CancellationTokens.CancellationTokenSource())
+    resp1_str = JSONRPC.read_transport_layer(socket2, _token)
     @test resp1_str !== nothing
     resp1 = JSON.parse(resp1_str)
     @test resp1["id"] == "r1"
     @test resp1["result"]["sum"] == 2
 
-    resp2_str = JSONRPC.read_transport_layer(socket2)
+    resp2_str = JSONRPC.read_transport_layer(socket2, _token)
     @test resp2_str !== nothing
     resp2 = JSON.parse(resp2_str)
     @test resp2["id"] == "r2"
@@ -1386,7 +1393,8 @@ end
     end
 
     sleep(0.2)
-    msg_str = JSONRPC.read_transport_layer(socket2)
+    _token = CancellationTokens.get_token(CancellationTokens.CancellationTokenSource())
+    msg_str = JSONRPC.read_transport_layer(socket2, _token)
     msg = JSON.parse(msg_str)
     id = msg["id"]
 
