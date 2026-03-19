@@ -75,9 +75,8 @@ end
     JSONRPC.write_transport_layer(socket1, bad_response)
 
     result = take!(result_ch)
-    @test result isa JSONRPC.JSONRPCError
-    @test result.code == 0
-    @test occursin("TRANSPORT", uppercase(result.msg))
+    @test result isa JSONRPC.TransportError
+    @test occursin("malformed", lowercase(result.msg))
 
     close(client)
     close(socket2)
