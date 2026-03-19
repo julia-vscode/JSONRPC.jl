@@ -21,9 +21,8 @@
 
     messages_back = Channel(Inf)
 
+    ep2 = JSONRPCEndpoint(socket1, socket1, OurSerialization())
     @async try
-        ep2 = JSONRPCEndpoint(socket1, socket1, OurSerialization())
-
         JSONRPC.start(ep2)
 
         msg = JSONRPC.get_next_message(ep2)
@@ -36,9 +35,6 @@
         msg3 = JSONRPC.get_next_message(ep2)
         put!(messages_back, msg3)
         send_error_response(ep2, msg3, 5, "Error", [x])
-
-        flush(ep2)
-        close(ep2)
     finally
         put!(task_done, true)
     catch err
@@ -63,6 +59,7 @@
     end
 
     close(ep1)
+    close(ep2)
 
     wait(task_done)
 
