@@ -105,6 +105,42 @@ function Base.showerror(io::IO, ex::JSONRPCError)
     end
 end
 
+"""
+    TransportError
+
+An exception indicating a transport-level failure (broken pipe, parse error, etc.).
+Stored in the endpoint and thrown on the next user-facing API call.
+
+Fields:
+ * msg::String
+ * inner::Union{Nothing,Exception}
+"""
+struct TransportError <: Exception
+    msg::String
+    inner::Union{Nothing,Exception}
+end
+
+function Base.showerror(io::IO, ex::TransportError)
+    print(io, "TransportError: ")
+    print(io, ex.msg)
+    if ex.inner !== nothing
+        print(io, "\n  caused by: ")
+        showerror(io, ex.inner)
+    end
+end
+
+"""
+    EndpointStatus
+
+Enum representing the lifecycle state of a `JSONRPCEndpoint`.
+
+ - `status_idle`    — constructed but `start()` has not been called yet
+ - `status_running` — read/write tasks are active; the endpoint is usable
+ - `status_errored` — a transport-level error occurred; the endpoint is unusable (call `close()` to clean up)
+ - `status_closed`  — fully shut down
+"""
+@enum EndpointStatus status_idle status_running status_errored status_closed
+
 struct Request
     method::String
     params::Union{Nothing,Dict{String,Any},Vector{Any}}
@@ -125,9 +161,9 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization}
 
     endpoint_cancellation_source::CancellationTokens.CancellationTokenSource
 
-    err_handler::Union{Nothing,Function}
+    err::Union{Nothing,TransportError}
 
-    status::Symbol
+    status::EndpointStatus
 
     read_task::Union{Nothing,Task}
     write_task::Union{Nothing,Task}
@@ -135,7 +171,7 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization}
     serialization::S
 end
 
-JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing, serialization::JSON.Serialization=JSON.StandardSerialization()) =
+JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.StandardSerialization()) =
     JSONRPCEndpoint(
         pipe_in,
         pipe_out,
@@ -145,8 +181,8 @@ JSONRPCEndpoint(pipe_in, pipe_out, err_handler=nothing, serialization::JSON.Seri
         Dict{Union{String,Int},CancellationTokens.CancellationTokenSource}(),
         Channel{Union{String,Int}}(Inf),
         CancellationTokens.CancellationTokenSource(),
-        err_handler,
-        :idle,
+        nothing,
+        status_idle,
         nothing,
         nothing,
         serialization)
@@ -227,12 +263,12 @@ function read_transport_layer(stream::Union{Sockets.TCPSocket,Sockets.PipeEndpoi
     end
 end
 
-Base.isopen(x::JSONRPCEndpoint) = x.status != :closed && isopen(x.pipe_in) && isopen(x.pipe_out)
+Base.isopen(x::JSONRPCEndpoint) = x.status == status_running && isopen(x.pipe_in) && isopen(x.pipe_out)
 
-function Base.run(x::JSONRPCEndpoint)
-    x.status == :idle || error("Endpoint is not idle.")
+function start(x::JSONRPCEndpoint)
+    x.status == status_idle || error("Endpoint is not idle.")
 
-    x.status = :running
+    x.status = status_running
 
     x.write_task = @async try
         try
@@ -240,7 +276,7 @@ function Base.run(x::JSONRPCEndpoint)
                 if isopen(x.pipe_out)
                     write_transport_layer(x.pipe_out, msg)
                 else
-                    # TODO Reconsider at some point whether this should be treated as an error.
+                    x.err === nothing && (x.err = TransportError("Write failed: output pipe is closed", nothing))
                     break
                 end
             end
@@ -249,14 +285,11 @@ function Base.run(x::JSONRPCEndpoint)
         end
     catch err
         if err isa Base.IOError
-            # Stream was closed, this is expected during shutdown
-        else
-            bt = catch_backtrace()
-            if x.err_handler !== nothing
-                x.err_handler(err, bt)
-            else
-                Base.display_error(stderr, err, bt)
+            if !CancellationTokens.is_cancellation_requested(x.endpoint_cancellation_source)
+                x.err === nothing && (x.err = TransportError("Write task IOError", err))
             end
+        else
+            x.err === nothing && (x.err = TransportError("Write task failed", err))
         end
     end
 
@@ -278,7 +311,7 @@ function Base.run(x::JSONRPCEndpoint)
                     read_transport_layer(x.pipe_in)
                 end
 
-                if message === nothing || x.status == :closed
+                if message === nothing
                     break
                 end
 
@@ -287,11 +320,7 @@ function Base.run(x::JSONRPCEndpoint)
                 catch parse_err
                     # Corrupted/truncated message (e.g. remote process crashed mid-write).
                     # Treat as broken pipe and exit the read loop.
-                    if x.err_handler !== nothing
-                        x.err_handler(parse_err, catch_backtrace())
-                    else
-                        @error "JSONRPC: failed to parse message, closing endpoint" exception=(parse_err, catch_backtrace())
-                    end
+                    x.err === nothing && (x.err = TransportError("Failed to parse message", parse_err))
                     break
                 end
 
@@ -338,11 +367,7 @@ function Base.run(x::JSONRPCEndpoint)
                     if channel_for_response !== nothing
                         put!(channel_for_response, message_dict)
                     else
-                        if x.err_handler !== nothing
-                            x.err_handler(ErrorException("JSONRPC: received response for unknown request id=$id_of_request"), Base.backtrace())
-                        else
-                            @error "JSONRPC: received response for unknown request, closing endpoint" id=id_of_request
-                        end
+                        x.err === nothing && (x.err = TransportError("Received response for unknown request id=$id_of_request", nothing))
                         break
                     end
                 end
@@ -362,16 +387,17 @@ function Base.run(x::JSONRPCEndpoint)
                 isopen(i) && close(i)
             end
 
-            x.status = :closed
+            x.status = x.err !== nothing ? status_errored : status_closed
         end
     catch err
-        if !(err isa Base.IOError)
-            bt = catch_backtrace()
-            if x.err_handler !== nothing
-                x.err_handler(err, bt)
-            else
-                Base.display_error(stderr, err, bt)
+        if err isa Base.IOError
+            if !CancellationTokens.is_cancellation_requested(x.endpoint_cancellation_source)
+                x.err === nothing && (x.err = TransportError("Read task IOError", err))
+                x.status = status_errored
             end
+        else
+            x.err === nothing && (x.err = TransportError("Read task failed", err))
+            x.status = status_errored
         end
     end
 end
@@ -435,9 +461,11 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
                 if client_token !== nothing && CancellationTokens.is_cancellation_requested(client_token)
                     throw(JSONRPCError(INTERNAL_ERROR, "Request cancelled by client", nothing))
                 else
+                    x.err !== nothing && throw(x.err)
                     throw(JSONRPCError(INTERNAL_ERROR, "Endpoint closed before response received", nothing))
                 end
             elseif err isa InvalidStateException
+                x.err !== nothing && throw(x.err)
                 throw(JSONRPCError(INTERNAL_ERROR, "Endpoint closed before response received", nothing))
             else
                 rethrow(err)
@@ -466,15 +494,25 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
     end
 end
 
-function get_next_message(endpoint::JSONRPCEndpoint)
+function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,CancellationTokens.CancellationToken}=nothing)
     check_dead_endpoint!(endpoint)
 
     endpoint_token = CancellationTokens.get_token(endpoint.endpoint_cancellation_source)
+    wait_token = if token !== nothing
+        combined_source = CancellationTokens.CancellationTokenSource(token, endpoint_token)
+        CancellationTokens.get_token(combined_source)
+    else
+        endpoint_token
+    end
     try
-        msg = take!(endpoint.in_msg_queue, endpoint_token)
+        msg = take!(endpoint.in_msg_queue, wait_token)
         return msg
     catch err
         if err isa CancellationTokens.OperationCanceledException || err isa InvalidStateException
+            if token !== nothing && CancellationTokens.is_cancellation_requested(token) && !CancellationTokens.is_cancellation_requested(endpoint.endpoint_cancellation_source)
+                throw(JSONRPCError(INTERNAL_ERROR, "get_next_message cancelled by token", nothing))
+            end
+            endpoint.err !== nothing && throw(endpoint.err)
             throw(JSONRPCError(INTERNAL_ERROR, "Endpoint closed", nothing))
         else
             rethrow(err)
@@ -490,6 +528,7 @@ function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
         return take!(endpoint.in_msg_queue, endpoint_token), nothing
     catch err
         if err isa InvalidStateException || err isa CancellationTokens.OperationCanceledException
+            endpoint.err !== nothing && throw(endpoint.err)
             return nothing
         else
             rethrow(err)
@@ -526,7 +565,7 @@ function send_error_response(endpoint, original_request::Request, @nospecialize(
 end
 
 function Base.close(endpoint::JSONRPCEndpoint)
-    endpoint.status == :closed && return
+    endpoint.status == status_closed && return
 
     # Signal the read task to stop — this unblocks any cancellation-aware reads
     # (TCPSocket/PipeEndpoint). For non-cancellation-aware streams, the caller
@@ -552,9 +591,9 @@ function Base.close(endpoint::JSONRPCEndpoint)
         end
     end
 
-    # Status is already :closed from the read task's finally block,
-    # but set it here too as a fallback in case the read task was never started
-    endpoint.status = :closed
+    # Status may be status_errored or status_closed from the read task's finally block.
+    # Always set status_closed here — close() is the final cleanup.
+    endpoint.status = status_closed
 end
 
 function Base.flush(endpoint::JSONRPCEndpoint)
@@ -569,6 +608,7 @@ end
 
 function check_dead_endpoint!(endpoint)
     status = endpoint.status
-    status === :running && return
+    status === status_running && return
+    endpoint.err !== nothing && throw(endpoint.err)
     error("Endpoint is not running, the current state is $(status).")
 end

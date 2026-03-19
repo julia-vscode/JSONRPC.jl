@@ -22,9 +22,9 @@
     messages_back = Channel(Inf)
 
     @async try
-        ep2 = JSONRPCEndpoint(socket1, socket1, nothing, OurSerialization())
+        ep2 = JSONRPCEndpoint(socket1, socket1, OurSerialization())
         
-        run(ep2)
+        JSONRPC.start(ep2)
 
         msg = JSONRPC.get_next_message(ep2)
         put!(messages_back, msg)
@@ -44,9 +44,9 @@
         Base.display_error(err, catch_backtrace())
     end   
 
-    ep1 = JSONRPCEndpoint(socket2, socket2, nothing, OurSerialization())
+    ep1 = JSONRPCEndpoint(socket2, socket2, OurSerialization())
 
-    run(ep1)
+    JSONRPC.start(ep1)
 
     send_notification(ep1, "foo", [x])
 

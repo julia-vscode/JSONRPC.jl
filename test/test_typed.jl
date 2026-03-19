@@ -26,7 +26,7 @@
         msg_dispatcher[request2_type] = (conn, params, token) -> JSONRPC.JSONRPCError(-32600, "Our message", nothing)
         msg_dispatcher[notify1_type] = (conn, params) -> global g_var = params[1]
 
-        run(conn)
+        JSONRPC.start(conn)
 
         for msg in conn
             JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
@@ -41,7 +41,7 @@
     sock2 = connect(global_socket_name1)
     conn2 = JSONRPCEndpoint(sock2, sock2)
 
-    run(conn2)
+    JSONRPC.start(conn2)
 
     JSONRPC.send(conn2, notify1_type, ["TEST"])
 
@@ -73,7 +73,7 @@
 
         msg_dispatcher[request2_type] = (conn, params, token)->34 # The request type requires a `String` return, so this tests whether we get an error.
 
-        run(conn)
+        JSONRPC.start(conn)
 
         for msg in conn
             @test_throws ErrorException("The handler for the 'request2' request returned a value of type $Int, which is not a valid return type according to the request definition.") JSONRPC.dispatch_msg(conn, msg_dispatcher, msg)
@@ -88,7 +88,7 @@
     sock2 = connect(global_socket_name2)
     conn2 = JSONRPCEndpoint(sock2, sock2)
 
-    run(conn2)
+    JSONRPC.start(conn2)
 
     @test_throws JSONRPC.JSONRPCError(-32603, "The handler for the 'request2' request returned a value of type $Int, which is not a valid return type according to the request definition.", nothing) JSONRPC.send(conn2, request2_type, nothing)
 
@@ -140,7 +140,7 @@ end
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        run(conn)
+        JSONRPC.start(conn)
 
         for msg in conn
             my_dispatcher(conn, msg)
@@ -154,7 +154,7 @@ end
     sock2 = connect(global_socket_name1)
     conn2 = JSONRPCEndpoint(sock2, sock2)
 
-    run(conn2)
+    JSONRPC.start(conn2)
 
     JSONRPC.send(conn2, notify1_type, ["TEST"])
 
@@ -188,7 +188,7 @@ end
         global conn = JSONRPC.JSONRPCEndpoint(sock, sock)
         global msg_dispatcher = JSONRPC.MsgDispatcher()
 
-        run(conn)
+        JSONRPC.start(conn)
 
         for msg in conn
             @test_throws ErrorException("The handler for the 'request2' request returned a value of type $Int, which is not a valid return type according to the request definition.") my_dispatcher2(conn, msg)
@@ -202,7 +202,7 @@ end
     sock2 = connect(global_socket_name2)
     conn2 = JSONRPCEndpoint(sock2, sock2)
 
-    run(conn2)
+    JSONRPC.start(conn2)
 
     @test_throws JSONRPC.JSONRPCError(-32603, "The handler for the 'request2' request returned a value of type $Int, which is not a valid return type according to the request definition.", nothing) JSONRPC.send(conn2, request2_type, nothing)
 
@@ -234,7 +234,7 @@ end
         msg_dispatcher[request1_type] = (conn, params, token) -> params.fieldA == 1 ? "YES" : "NO"
         msg_dispatcher[request_throwing_type] = (conn, params, token) -> error("handler exploded")
 
-        run(conn)
+        JSONRPC.start(conn)
 
         for msg in conn
             try
@@ -252,7 +252,7 @@ end
 
     sock2 = connect(global_socket_name)
     conn2 = JSONRPC.JSONRPCEndpoint(sock2, sock2)
-    run(conn2)
+    JSONRPC.start(conn2)
 
     # Test 1: Unknown method → METHOD_NOT_FOUND (-32601)
     unknown_type = JSONRPC.RequestType("nonexistent", Nothing, String)
@@ -310,7 +310,7 @@ end
         sock = accept(server)
         conn = JSONRPC.JSONRPCEndpoint(sock, sock)
 
-        run(conn)
+        JSONRPC.start(conn)
 
         for msg in conn
             try
@@ -328,7 +328,7 @@ end
 
     sock2 = connect(global_socket_name)
     conn2 = JSONRPC.JSONRPCEndpoint(sock2, sock2)
-    run(conn2)
+    JSONRPC.start(conn2)
 
     # Test 1: Unknown method → METHOD_NOT_FOUND (-32601)
     unknown_type = JSONRPC.RequestType("nonexistent", Nothing, String)

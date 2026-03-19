@@ -7,4 +7,27 @@
     @test sprint(showerror, JSONRPC.JSONRPCError(-32002, "FOO", "BAR")) == "ServerNotInitialized: FOO (BAR)"
     @test sprint(showerror, JSONRPC.JSONRPCError(-32001, "FOO", "BAR")) == "UnknownErrorCode: FOO (BAR)"
     @test sprint(showerror, JSONRPC.JSONRPCError(1, "FOO", "BAR")) == "Unknown: FOO (BAR)"
+
+    # JSONRPCError with no data
+    @test sprint(showerror, JSONRPC.JSONRPCError(-32700, "FOO", nothing)) == "ParseError: FOO"
+
+    # ServerError range
+    for code in -32099:-32003
+        @test sprint(showerror, JSONRPC.JSONRPCError(code, "X", nothing)) == "ServerError: X"
+    end
+
+    # TransportError
+    te = JSONRPC.TransportError("pipe broke", nothing)
+    @test sprint(showerror, te) == "TransportError: pipe broke"
+    te2 = JSONRPC.TransportError("read failed", ErrorException("boom"))
+    s = sprint(showerror, te2)
+    @test startswith(s, "TransportError: read failed")
+    @test occursin("boom", s)
+
+    # EndpointStatus enum values
+    @test Int(JSONRPC.status_idle) == 0
+    @test Int(JSONRPC.status_running) == 1
+    @test Int(JSONRPC.status_errored) == 2
+    @test Int(JSONRPC.status_closed) == 3
+    @test JSONRPC.EndpointStatus(0) === JSONRPC.status_idle
 end

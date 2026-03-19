@@ -1,4 +1,4 @@
-export JSONRPCEndpoint, send_notification, send_request, send_success_response, send_error_response
+export JSONRPCEndpoint, TransportError, EndpointStatus, start, send_notification, send_request, send_success_response, send_error_response
 
 include("pipenames.jl")
 include("core.jl")
@@ -9,7 +9,7 @@ function _precompile_()
     ccall(:jl_generating_output, Cint, ()) == 1 || return nothing
 
     E = JSONRPCEndpoint{Base.PipeEndpoint, Base.PipeEndpoint, JSON.Serializations.StandardSerialization}
-    precompile(Base.run, (E,))
+    precompile(start, (E,))
     precompile(send_notification, (E, String, Any))
     precompile(send_request, (E, String, Any))
     precompile(send_success_response, (E, Request, Any))

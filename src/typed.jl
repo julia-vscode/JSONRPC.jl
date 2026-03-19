@@ -68,7 +68,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                 params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...)) : param_type(msg.params)
             catch err
                 if is_request
-                    send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing)
+                    try send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing) catch end
                 end
                 rethrow()
             end
@@ -82,7 +82,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                 end
             catch err
                 if is_request
-                    send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                    try send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing) catch end
                 end
                 rethrow()
             end
@@ -94,13 +94,13 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                     send_success_response(x, msg, res)
                 else
                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                    send_error_response(x, msg, -32603, error_msg, nothing)
+                    try send_error_response(x, msg, -32603, error_msg, nothing) catch end
                     error(error_msg)
                 end
             end
         else
             if is_request
-                send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing)
+                try send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing) catch end
             end
             error("Unknown method $method_name.")
         end
@@ -127,7 +127,7 @@ macro message_dispatcher(name, body)
                                 params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...)) : param_type(msg.params)
                             catch err
                                 if is_request
-                                    send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing)
+                                    try send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing) catch end
                                 end
                                 rethrow()
                             end
@@ -149,7 +149,7 @@ macro message_dispatcher(name, body)
                                 end
                             catch err
                                 if is_request
-                                    send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                                    try send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing) catch end
                                 end
                                 rethrow()
                             end
@@ -161,7 +161,7 @@ macro message_dispatcher(name, body)
                                     send_success_response(x, msg, res)
                                 else
                                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                                    send_error_response(x, msg, -32603, error_msg, nothing)
+                                    try send_error_response(x, msg, -32603, error_msg, nothing) catch end
                                     error(error_msg)
                                 end
                             end
@@ -173,7 +173,7 @@ macro message_dispatcher(name, body)
             )
 
             if is_request
-                send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing)
+                try send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing) catch end
             end
             error("Unknown method $method_name.")
         end
