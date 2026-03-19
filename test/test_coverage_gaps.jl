@@ -900,10 +900,10 @@ end
     close(client)
 
     result = take!(result_ch)
-    # Should be JSONRPCError about endpoint closed (no TransportError since close is clean)
+    # Should be TransportError about endpoint closed (no transport error since close is clean)
     @test result isa Exception
-    if result isa JSONRPC.JSONRPCError
-        @test occursin("closed", lowercase(result.msg)) || occursin("cancelled", lowercase(result.msg))
+    if result isa JSONRPC.TransportError
+        @test occursin("closed", lowercase(result.msg))
     end
 
     close(socket2)
@@ -1028,8 +1028,7 @@ end
         err_ref[] = e
     end
 
-    @test err_ref[] isa JSONRPC.JSONRPCError
-    @test occursin("cancelled by token", err_ref[].msg)
+    @test err_ref[] isa CancellationTokens.OperationCanceledException
     close(ep)
     close(socket2)
 end
@@ -1208,8 +1207,7 @@ end
     sleep(0.3)
 
     wait(t)
-    @test err_ref[] isa JSONRPC.JSONRPCError
-    @test occursin("cancelled by client", err_ref[].msg)
+    @test err_ref[] isa CancellationTokens.OperationCanceledException
     close(ep)
     close(socket2)
 end

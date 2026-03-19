@@ -132,8 +132,7 @@ end
     cancel(src)
 
     result = take!(result_ch)
-    @test result isa JSONRPC.JSONRPCError
-    @test occursin("cancelled by token", result.msg)
+    @test result isa CancellationTokens.OperationCanceledException
 
     # The endpoint should still be healthy
     @test server.status == JSONRPC.status_running
@@ -174,6 +173,6 @@ end
     close(socket1)
 
     result = take!(result_ch)
-    # Should throw — either TransportError or JSONRPCError about endpoint closed
+    # Should throw — either TransportError or OperationCanceledException
     @test result isa Exception
 end

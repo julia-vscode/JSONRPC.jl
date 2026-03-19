@@ -139,8 +139,8 @@ end
     close(socket2)
 
     result = take!(result_channel)
-    @test result isa JSONRPC.JSONRPCError
-    @test occursin("Endpoint closed", result.msg) || occursin("cancelled", result.msg)
+    @test result isa JSONRPC.TransportError
+    @test occursin("Endpoint closed", result.msg)
 
     close(server)
     close(socket1)
@@ -257,9 +257,7 @@ end
     cancel(client_src)
 
     result = fetch(client_task)
-    @test result isa JSONRPC.JSONRPCError
-    @test occursin("cancelled by client", result.msg)
-    @test result.code == -32603
+    @test result isa CancellationTokens.OperationCanceledException
 
     # The server should NOT have received a $/cancelRequest
     server_cancel_status = take!(server_got_cancel_request)
@@ -272,8 +270,7 @@ end
 
     @test fetch(server_task_err) isa JSONRPC.TransportError
     c_err = fetch(client_task_err)
-    @test c_err isa JSONRPC.JSONRPCError
-    @test c_err.code == -32603
+    @test c_err isa CancellationTokens.OperationCanceledException
 end
 
 @testitem "dual-token: both tokens" setup=[NamedPipes] begin
@@ -331,8 +328,199 @@ end
     cancel(client_src)
 
     result = fetch(client_task)
-    @test result isa JSONRPC.JSONRPCError
-    @test occursin("cancelled by client", result.msg)
+    @test result isa CancellationTokens.OperationCanceledException
+
+    close(client)
+    close(socket2)
+    close(server)
+    close(socket1)
+end
+
+@testitem "client cancellation: endpoint recovers" setup=[NamedPipes] begin
+    using CancellationTokens
+
+    socket1, socket2 = NamedPipes.get_named_pipe()
+
+    request_type = JSONRPC.RequestType("echo", Nothing, String)
+
+    server = JSONRPC.JSONRPCEndpoint(socket1, socket1)
+    client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
+
+    call_count = Ref(0)
+
+    msg_dispatcher = JSONRPC.MsgDispatcher()
+    msg_dispatcher[request_type] = (conn, params, token) -> begin
+        call_count[] += 1
+        if call_count[] == 1
+            # First call: delay so client cancellation fires before response
+            sleep(1)
+        end
+        "hello"
+    end
+
+    JSONRPC.start(server)
+    JSONRPC.start(client)
+
+    server_task = @async try
+        for msg in server
+            @async JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
+        end
+    catch err
+        Base.display_error(stderr, err, catch_backtrace())
+    end
+
+    # First request: cancel via client_token
+    client_src = CancellationTokenSource()
+    client_task = @async try
+        JSONRPC.send(client, request_type, nothing; client_token=get_token(client_src))
+    catch err
+        err
+    end
+
+    sleep(0.2)
+    cancel(client_src)
+
+    result = fetch(client_task)
+    @test result isa CancellationTokens.OperationCanceledException
+
+    # Wait for the server to finish the first request (sends late response)
+    sleep(1.5)
+
+    # Endpoint should still be healthy — the tombstone absorbed the late response
+    @test client.status == JSONRPC.status_running
+
+    # Second request should work fine
+    res = JSONRPC.send(client, request_type, nothing)
+    @test res == "hello"
+
+    close(client)
+    close(socket2)
+    close(server)
+    close(socket1)
+end
+
+@testitem "server -32800 response becomes OperationCanceledException" setup=[NamedPipes] begin
+    using CancellationTokens
+
+    socket1, socket2 = NamedPipes.get_named_pipe()
+
+    request_type = JSONRPC.RequestType("cancellable", Nothing, String)
+
+    server = JSONRPC.JSONRPCEndpoint(socket1, socket1)
+    client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
+
+    msg_dispatcher = JSONRPC.MsgDispatcher()
+    msg_dispatcher[request_type] = (conn, params, token) -> begin
+        JSONRPC.JSONRPCError(JSONRPC.REQUEST_CANCELLED, "Request cancelled", nothing)
+    end
+
+    JSONRPC.start(server)
+    JSONRPC.start(client)
+
+    server_task = @async try
+        for msg in server
+            JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
+        end
+    catch
+    end
+
+    server_src = CancellationTokenSource()
+    server_token = get_token(server_src)
+
+    threw = Ref(false)
+    try
+        JSONRPC.send(client, request_type, nothing; server_token=server_token)
+    catch err
+        threw[] = true
+        @test err isa CancellationTokens.OperationCanceledException
+    end
+    @test threw[]
+
+    close(client)
+    close(socket2)
+    close(server)
+    close(socket1)
+end
+
+@testitem "server -32800 without server_token stays JSONRPCError" setup=[NamedPipes] begin
+    using CancellationTokens
+
+    socket1, socket2 = NamedPipes.get_named_pipe()
+
+    request_type = JSONRPC.RequestType("cancellable", Nothing, String)
+
+    server = JSONRPC.JSONRPCEndpoint(socket1, socket1)
+    client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
+
+    msg_dispatcher = JSONRPC.MsgDispatcher()
+    msg_dispatcher[request_type] = (conn, params, token) -> begin
+        JSONRPC.JSONRPCError(JSONRPC.REQUEST_CANCELLED, "Request cancelled", nothing)
+    end
+
+    JSONRPC.start(server)
+    JSONRPC.start(client)
+
+    server_task = @async try
+        for msg in server
+            JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
+        end
+    catch
+    end
+
+    # No server_token provided — should stay as JSONRPCError
+    threw = Ref(false)
+    try
+        JSONRPC.send(client, request_type, nothing)
+    catch err
+        threw[] = true
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == JSONRPC.REQUEST_CANCELLED
+    end
+    @test threw[]
+
+    close(client)
+    close(socket2)
+    close(server)
+    close(socket1)
+end
+
+@testitem "dispatch_msg: handler OperationCanceledException sends -32800" setup=[NamedPipes] begin
+    using CancellationTokens
+
+    socket1, socket2 = NamedPipes.get_named_pipe()
+
+    request_type = JSONRPC.RequestType("cancel_me", Nothing, String)
+
+    server = JSONRPC.JSONRPCEndpoint(socket1, socket1)
+    client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
+
+    msg_dispatcher = JSONRPC.MsgDispatcher()
+    msg_dispatcher[request_type] = (conn, params, token) -> begin
+        src = CancellationTokenSource()
+        cancel(src)
+        throw(CancellationTokens.OperationCanceledException(get_token(src)))
+    end
+
+    JSONRPC.start(server)
+    JSONRPC.start(client)
+
+    server_task = @async try
+        for msg in server
+            @async JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
+        end
+    catch
+    end
+
+    threw = Ref(false)
+    try
+        JSONRPC.send(client, request_type, nothing)
+    catch err
+        threw[] = true
+        @test err isa JSONRPC.JSONRPCError
+        @test err.code == JSONRPC.REQUEST_CANCELLED
+        @test occursin("cancelled", lowercase(err.msg))
+    end
+    @test threw[]
 
     close(client)
     close(socket2)

@@ -68,7 +68,7 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                 params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...)) : param_type(msg.params)
             catch err
                 if is_request
-                    try send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing) catch end
+                    send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing)
                 end
                 rethrow()
             end
@@ -81,10 +81,26 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                     res = handler.func(x, params)
                 end
             catch err
-                if is_request
-                    try send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing) catch end
+                if err isa CancellationTokens.OperationCanceledException
+                    if is_request
+                        send_error_response(x, msg, REQUEST_CANCELLED, "Request cancelled", nothing)
+                    end
+                    return
                 end
-                rethrow()
+
+                if is_request
+                    if err isa JSONRPCError
+                        send_error_response(x, msg, err.code, err.msg, err.data)
+                    else
+                        send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                    end
+                end
+
+                if err isa JSONRPCError
+                    return
+                else
+                    rethrow()
+                end
             end
 
             if handler.message_type isa RequestType
@@ -94,13 +110,13 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                     send_success_response(x, msg, res)
                 else
                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                    try send_error_response(x, msg, -32603, error_msg, nothing) catch end
+                    send_error_response(x, msg, -32603, error_msg, nothing)
                     error(error_msg)
                 end
             end
         else
             if is_request
-                try send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing) catch end
+                send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing)
             end
             error("Unknown method $method_name.")
         end
@@ -127,7 +143,7 @@ macro message_dispatcher(name, body)
                                 params = param_type === Nothing ? nothing : param_type <: NamedTuple ? convert(param_type,(;(Symbol(i[1])=>i[2] for i in msg.params)...)) : param_type(msg.params)
                             catch err
                                 if is_request
-                                    try send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing) catch end
+                                    send_error_response(x, msg, INVALID_PARAMS, string("Invalid params: ", err), nothing)
                                 end
                                 rethrow()
                             end
@@ -148,10 +164,26 @@ macro message_dispatcher(name, body)
                                     end
                                 end
                             catch err
-                                if is_request
-                                    try send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing) catch end
+                                if err isa CancellationTokens.OperationCanceledException
+                                    if is_request
+                                        send_error_response(x, msg, REQUEST_CANCELLED, "Request cancelled", nothing)
+                                    end
+                                    return
                                 end
-                                rethrow()
+
+                                if is_request
+                                    if err isa JSONRPCError
+                                        send_error_response(x, msg, err.code, err.msg, err.data)
+                                    else
+                                        send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                                    end
+                                end
+
+                                if err isa JSONRPCError
+                                    return
+                                else
+                                    rethrow()
+                                end
                             end
 
                             if $(esc(i.args[2])) isa RequestType
@@ -161,7 +193,7 @@ macro message_dispatcher(name, body)
                                     send_success_response(x, msg, res)
                                 else
                                     error_msg = "The handler for the '$method_name' request returned a value of type $(typeof(res)), which is not a valid return type according to the request definition."
-                                    try send_error_response(x, msg, -32603, error_msg, nothing) catch end
+                                    send_error_response(x, msg, -32603, error_msg, nothing)
                                     error(error_msg)
                                 end
                             end
@@ -173,7 +205,7 @@ macro message_dispatcher(name, body)
             )
 
             if is_request
-                try send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing) catch end
+                send_error_response(x, msg, METHOD_NOT_FOUND, "Unknown method $method_name.", nothing)
             end
             error("Unknown method $method_name.")
         end

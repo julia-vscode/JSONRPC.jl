@@ -76,6 +76,15 @@ Internal JSON-RPC error.
 const INTERNAL_ERROR = -32603
 
 """
+    REQUEST_CANCELLED
+
+The request was cancelled by the client (via `\$/cancelRequest`).
+
+This error code follows the LSP specification convention.
+"""
+const REQUEST_CANCELLED = -32800
+
+"""
    RPCErrorStrings
 
 A `Base.IdDict` containing the mapping of JSON-RPC error codes to a short, descriptive string.
@@ -88,6 +97,7 @@ const RPCErrorStrings = Base.IdDict(
     METHOD_NOT_FOUND => "MethodNotFound",
     INVALID_PARAMS => "InvalidParams",
     INTERNAL_ERROR => "InternalError",
+    REQUEST_CANCELLED => "RequestCancelled",
     [ i => "ServerError" for i in SERVER_ERROR_START:SERVER_ERROR_END]...,
     -32002 => "ServerNotInitialized",
     -32001 => "UnknownErrorCode",
@@ -371,7 +381,17 @@ function start(x::JSONRPCEndpoint)
 
                     channel_for_response = get(x.outstanding_requests, id_of_request, nothing)
                     if channel_for_response !== nothing
-                        put!(channel_for_response, message_dict)
+                        try
+                            put!(channel_for_response, message_dict)
+                        catch err
+                            if err isa InvalidStateException
+                                # Channel was closed by a client-cancelled send_request (tombstone).
+                                # Silently discard the late response and clean up the entry.
+                                delete!(x.outstanding_requests, id_of_request)
+                            else
+                                rethrow(err)
+                            end
+                        end
                     else
                         x.err === nothing && (x.err = TransportError("Received response for unknown request id=$id_of_request", nothing))
                         break
@@ -463,20 +483,22 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
         endpoint_token
     end
 
+    cancelled_by_client = false
     try
         response = try
             take!(response_channel, wait_token)
         catch err
             if err isa CancellationTokens.OperationCanceledException
                 if client_token !== nothing && CancellationTokens.is_cancellation_requested(client_token)
-                    throw(JSONRPCError(INTERNAL_ERROR, "Request cancelled by client", nothing))
+                    cancelled_by_client = true
+                    throw(CancellationTokens.OperationCanceledException(client_token))
                 else
                     x.err !== nothing && throw(x.err)
-                    throw(JSONRPCError(INTERNAL_ERROR, "Endpoint closed before response received", nothing))
+                    throw(TransportError("Endpoint closed before response received", nothing))
                 end
             elseif err isa InvalidStateException
                 x.err !== nothing && throw(x.err)
-                throw(JSONRPCError(INTERNAL_ERROR, "Endpoint closed before response received", nothing))
+                throw(TransportError("Endpoint closed before response received", nothing))
             else
                 rethrow(err)
             end
@@ -488,13 +510,22 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
             error_code = response["error"]["code"]
             error_msg = response["error"]["message"]
             error_data = get(response["error"], "data", nothing)
+            if error_code == REQUEST_CANCELLED && server_token !== nothing
+                throw(CancellationTokens.OperationCanceledException(server_token))
+            end
             throw(JSONRPCError(error_code, error_msg, error_data))
         else
             # this should never happen since we guard against it in the reader task
             throw(TransportError("Received malformed response", nothing))
         end
     finally
-        delete!(x.outstanding_requests, id)
+        if cancelled_by_client
+            # Leave a tombstone: close the channel but keep the entry so the read task
+            # can silently discard the server's late response instead of erroring.
+            isopen(response_channel) && close(response_channel)
+        else
+            delete!(x.outstanding_requests, id)
+        end
         if server_monitor_task !== nothing
             try
                 schedule(server_monitor_task, CancellationTokens.WaitCanceledException(), error=true)
@@ -521,10 +552,10 @@ function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,Cancel
     catch err
         if err isa CancellationTokens.OperationCanceledException || err isa InvalidStateException
             if token !== nothing && CancellationTokens.is_cancellation_requested(token) && !CancellationTokens.is_cancellation_requested(endpoint_token)
-                throw(JSONRPCError(INTERNAL_ERROR, "get_next_message cancelled by token", nothing))
+                throw(CancellationTokens.OperationCanceledException(token))
             end
             endpoint.err !== nothing && throw(endpoint.err)
-            throw(JSONRPCError(INTERNAL_ERROR, "Endpoint closed", nothing))
+            throw(TransportError("Endpoint closed", nothing))
         else
             rethrow(err)
         end
