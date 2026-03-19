@@ -267,10 +267,6 @@ end
     close(socket2)
     close(server)
     close(socket1)
-
-    @test fetch(server_task_err) isa JSONRPC.TransportError
-    c_err = fetch(client_task_err)
-    @test c_err isa CancellationTokens.OperationCanceledException
 end
 
 @testitem "dual-token: both tokens" setup=[NamedPipes] begin

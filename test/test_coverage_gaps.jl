@@ -169,7 +169,7 @@ end
     close(socket1)
 end
 
-@testitem "token read_transport_layer: cancellation returns nothing" setup=[NamedPipes] begin
+@testitem "token read_transport_layer: cancellation throws OperationCanceledException" setup=[NamedPipes] begin
     using CancellationTokens
 
     socket1, socket2 = NamedPipes.get_named_pipe()
@@ -190,7 +190,7 @@ end
     CancellationTokens.cancel(src)
 
     result = take!(result_ch)
-    @test result === :nothing_returned
+    @test result isa CancellationTokens.OperationCanceledException
 
     close(socket1)
     close(socket2)
