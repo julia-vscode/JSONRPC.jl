@@ -72,9 +72,11 @@ end
 
     request_type = JSONRPC.RequestType("slow_op", Nothing, String)
     token_was_cancelled = Channel{Bool}(1)
+    handler_started = Channel{Bool}(1)
 
     msg_dispatcher = JSONRPC.MsgDispatcher()
     msg_dispatcher[request_type] = (conn, params, token) -> begin
+        put!(handler_started, true)
         # Wait for cancellation
         try
             wait(token)
@@ -86,19 +88,24 @@ end
 
     server_task = @async try
         for msg in server
-            @async JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
+            @async try
+                JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
+            catch err
+                @error "handler" ex=(err, catch_backtrace())
+            end
         end
-    catch
+    catch err
+        @error "handler" ex=(err, catch_backtrace())
     end
 
     # Send the request
     client_task = @async try
         JSONRPC.send(client, request_type, nothing)
     catch err
-        err
+        @error "handler" ex=(err, catch_backtrace())
     end
 
-    sleep(0.2)
+    wait(handler_started)
 
     # Send a $/cancelRequest from client to server for the in-flight request.
     # We need to find the request id. It's in server.cancellation_sources.
