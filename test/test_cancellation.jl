@@ -49,9 +49,11 @@ end
     client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
 
     token_was_cancelled = Channel{Bool}(1)
+    handler_started = Channel{Bool}(1)
 
     msg_dispatcher = JSONRPC.MsgDispatcher()
     msg_dispatcher[request_type] = (conn, params, token) -> begin
+        put!(handler_started, true)
         # Wait for cancellation (endpoint close should trigger it)
         try
             wait(token)
@@ -80,8 +82,7 @@ end
         err
     end
 
-    # Give time for the request to arrive
-    sleep(0.2)
+    wait(handler_started)
 
     # Close the server endpoint — should cancel all in-progress request tokens
     close(server)
@@ -104,10 +105,14 @@ end
     server = JSONRPC.JSONRPCEndpoint(socket1, socket1)
     client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
 
+    handler_started = Channel{Bool}(1)
+    handler_blocked = Channel{Nothing}(1)
+
     msg_dispatcher = JSONRPC.MsgDispatcher()
     msg_dispatcher[request_type] = (conn, params, token) -> begin
+        put!(handler_started, true)
         # Never respond — just block
-        sleep(100)
+        wait(handler_blocked)
         "never"
     end
 
@@ -131,8 +136,7 @@ end
         put!(result_channel, err)
     end
 
-    # Give time for request to be sent
-    sleep(0.2)
+    wait(handler_started)
 
     # Close the client endpoint while the request is pending
     close(client)
@@ -157,9 +161,11 @@ end
     client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
 
     cancel_received = Channel{Bool}(1)
+    handler_started = Channel{Bool}(1)
 
     msg_dispatcher = JSONRPC.MsgDispatcher()
     msg_dispatcher[request_type] = (conn, params, token) -> begin
+        put!(handler_started, true)
         # Wait for the cancellation token (from $/cancelRequest)
         wait(token)
         put!(cancel_received, true)
@@ -187,8 +193,7 @@ end
         err
     end
 
-    # Give time for request to arrive at server
-    sleep(0.2)
+    wait(handler_started)
 
     # Cancel the server token — should auto-send $/cancelRequest
     cancel(server_src)
@@ -218,11 +223,14 @@ end
     client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
 
     server_got_cancel_request = Channel{Bool}(1)
+    handler_started = Channel{Bool}(1)
+    handler_may_proceed = Channel{Bool}(1)
 
     msg_dispatcher = JSONRPC.MsgDispatcher()
     msg_dispatcher[request_type] = (conn, params, token) -> begin
-        # Block for a while, check if $/cancelRequest arrives
-        sleep(2)
+        put!(handler_started, true)
+        # Wait until test signals, then check if $/cancelRequest arrived
+        wait(handler_may_proceed)
         put!(server_got_cancel_request, is_cancellation_requested(token))
         "done"
     end
@@ -250,11 +258,13 @@ end
         put!(client_task_err, err)
     end
 
-    # Give time for request to arrive
-    sleep(0.2)
+    wait(handler_started)
 
     # Cancel the client token — should give up locally without sending $/cancelRequest
     cancel(client_src)
+
+    # Let the handler proceed to check cancellation status
+    put!(handler_may_proceed, true)
 
     result = fetch(client_task)
     @test result isa CancellationTokens.OperationCanceledException
@@ -280,13 +290,16 @@ end
     client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
 
     server_token_cancelled = Channel{Bool}(1)
+    handler_started = Channel{Bool}(1)
+    handler_may_respond = Channel{Bool}(1)
 
     msg_dispatcher = JSONRPC.MsgDispatcher()
     msg_dispatcher[request_type] = (conn, params, token) -> begin
+        put!(handler_started, true)
         # Wait for the server cancellation
         wait(token)
         put!(server_token_cancelled, true)
-        sleep(1)  # Delay response so client_token can fire first
+        wait(handler_may_respond)  # Delay response so client_token can fire first
         "done"
     end
 
@@ -312,7 +325,7 @@ end
         err
     end
 
-    sleep(0.2)
+    wait(handler_started)
 
     # Cancel server token first — sends $/cancelRequest, client keeps waiting
     cancel(server_src)
@@ -322,6 +335,9 @@ end
 
     # Now cancel client token — client should give up immediately
     cancel(client_src)
+
+    # Let the handler respond
+    put!(handler_may_respond, true)
 
     result = fetch(client_task)
     @test result isa CancellationTokens.OperationCanceledException
@@ -343,13 +359,16 @@ end
     client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
 
     call_count = Ref(0)
+    handler_started = Channel{Bool}(1)
+    handler_may_respond = Channel{Bool}(1)
 
     msg_dispatcher = JSONRPC.MsgDispatcher()
     msg_dispatcher[request_type] = (conn, params, token) -> begin
         call_count[] += 1
         if call_count[] == 1
-            # First call: delay so client cancellation fires before response
-            sleep(1)
+            put!(handler_started, true)
+            # Block until test signals — client cancellation fires before response
+            wait(handler_may_respond)
         end
         "hello"
     end
@@ -373,14 +392,14 @@ end
         err
     end
 
-    sleep(0.2)
+    wait(handler_started)
     cancel(client_src)
 
     result = fetch(client_task)
     @test result isa CancellationTokens.OperationCanceledException
 
-    # Wait for the server to finish the first request (sends late response)
-    sleep(1.5)
+    # Let the server handler finish — its late response should be absorbed by the tombstone
+    put!(handler_may_respond, true)
 
     # Endpoint should still be healthy — the tombstone absorbed the late response
     @test client.status == JSONRPC.status_running
