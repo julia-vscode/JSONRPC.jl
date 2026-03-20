@@ -1,3 +1,13 @@
+# Version v3.0.0
+## Breaking changes
+- `run(endpoint)` renamed to `start(endpoint)` — now exported as `JSONRPC.start`
+- `err_handler` callback removed from `JSONRPCEndpoint` constructor; new signature is `JSONRPCEndpoint(pipe_in, pipe_out, serialization=JSON.StandardSerialization())`
+- Transport errors are now stored in the endpoint and thrown on the next user-facing API call as `TransportError`
+
+## New features
+- New `TransportError` exception type (exported) distinguishes transport-level failures from JSON-RPC protocol errors (`JSONRPCError`)
+- `get_next_message` now accepts an optional `token` keyword argument for caller-controlled cancellation
+
 # Version v2.1.0
 ## New features
 - Add support for custom JSON serialization via a `serialization` argument on `JSONRPCEndpoint`

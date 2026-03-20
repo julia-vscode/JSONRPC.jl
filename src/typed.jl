@@ -81,10 +81,26 @@ function dispatch_msg(x::JSONRPCEndpoint, dispatcher::MsgDispatcher, msg::Reques
                     res = handler.func(x, params)
                 end
             catch err
-                if is_request
-                    send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                if err isa CancellationTokens.OperationCanceledException
+                    if is_request
+                        send_error_response(x, msg, REQUEST_CANCELLED, "Request cancelled", nothing)
+                    end
+                    return
                 end
-                rethrow()
+
+                if is_request
+                    if err isa JSONRPCError
+                        send_error_response(x, msg, err.code, err.msg, err.data)
+                    else
+                        send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                    end
+                end
+
+                if err isa JSONRPCError
+                    return
+                else
+                    rethrow()
+                end
             end
 
             if handler.message_type isa RequestType
@@ -148,10 +164,26 @@ macro message_dispatcher(name, body)
                                     end
                                 end
                             catch err
-                                if is_request
-                                    send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                                if err isa CancellationTokens.OperationCanceledException
+                                    if is_request
+                                        send_error_response(x, msg, REQUEST_CANCELLED, "Request cancelled", nothing)
+                                    end
+                                    return
                                 end
-                                rethrow()
+
+                                if is_request
+                                    if err isa JSONRPCError
+                                        send_error_response(x, msg, err.code, err.msg, err.data)
+                                    else
+                                        send_error_response(x, msg, INTERNAL_ERROR, string("Error handling request: ", err), nothing)
+                                    end
+                                end
+
+                                if err isa JSONRPCError
+                                    return
+                                else
+                                    rethrow()
+                                end
                             end
 
                             if $(esc(i.args[2])) isa RequestType
