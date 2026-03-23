@@ -241,29 +241,37 @@ function read_transport_layer(stream, token::CancellationTokens.CancellationToke
 end
 
 function read_transport_layer(stream::Union{Sockets.TCPSocket,Sockets.PipeEndpoint}, token::CancellationTokens.CancellationToken)
-    header_dict = Dict{String,String}()
-    line = chomp(readline(stream, token))
-    # Check whether the socket was closed
-    if line == ""
-        return nothing
-    end
-    while length(line) > 0
-        h_parts = split(line, ":", limit=2)
-        if length(h_parts) == 2
-            header_dict[chomp(h_parts[1])] = chomp(h_parts[2])
-        end
+    try
+        header_dict = Dict{String,String}()
         line = chomp(readline(stream, token))
+        # Check whether the socket was closed
+        if line == ""
+            return nothing
+        end
+        while length(line) > 0
+            h_parts = split(line, ":", limit=2)
+            if length(h_parts) == 2
+                header_dict[chomp(h_parts[1])] = chomp(h_parts[2])
+            end
+            line = chomp(readline(stream, token))
+        end
+        if !haskey(header_dict, "Content-Length")
+            return nothing
+        end
+        message_length = parse(Int, header_dict["Content-Length"])
+        message_str = String(read(stream, message_length, token))
+        if ncodeunits(message_str) != message_length
+            # Truncated read — the remote process likely crashed mid-write
+            return nothing
+        end
+        return message_str
+    catch err
+        if err isa Base.IOError
+            return nothing
+        end
+
+        rethrow(err)
     end
-    if !haskey(header_dict, "Content-Length")
-        return nothing
-    end
-    message_length = parse(Int, header_dict["Content-Length"])
-    message_str = String(read(stream, message_length, token))
-    if ncodeunits(message_str) != message_length
-        # Truncated read — the remote process likely crashed mid-write
-        return nothing
-    end
-    return message_str
 end
 
 Base.isopen(x::JSONRPCEndpoint) = x.status == status_running && isopen(x.pipe_in) && isopen(x.pipe_out)
@@ -412,6 +420,14 @@ function start(x::JSONRPCEndpoint)
             end
         elseif err isa CancellationTokens.OperationCanceledException
             # Expected during endpoint close — not an error
+        elseif !isopen(x.pipe_in)
+            # Pipe is closed — the exception is from reading a broken pipe.
+            # Different Julia versions/platforms throw different exception types
+            # for this scenario, so we check the pipe state instead.
+            if !CancellationTokens.is_cancellation_requested(endpoint_token)
+                x.err === nothing && (x.err = TransportError("Read task IOError", err))
+                x.status = status_errored
+            end
         else
             x.err === nothing && (x.err = TransportError("Read task failed", err))
             x.status = status_errored
