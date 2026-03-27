@@ -159,7 +159,34 @@ struct Request
     token::Union{CancellationTokens.CancellationToken,Nothing}
 end
 
-mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization}
+"""
+    FramingMode
+
+Abstract type for message framing modes used by `JSONRPCEndpoint`.
+
+Two built-in modes are provided:
+- `ContentLengthFraming()` — LSP-style `Content-Length` header framing (default)
+- `NewlineDelimitedFraming()` — newline-delimited JSON, one message per line (used by MCP stdio transport)
+"""
+abstract type FramingMode end
+
+"""
+    ContentLengthFraming()
+
+LSP-style framing where each message is preceded by a `Content-Length` header.
+This is the default framing mode and is backward-compatible with all existing usage.
+"""
+struct ContentLengthFraming <: FramingMode end
+
+"""
+    NewlineDelimitedFraming()
+
+Newline-delimited JSON framing where each message is a single line of JSON terminated by `\\n`.
+Used by the MCP (Model Context Protocol) stdio transport.
+"""
+struct NewlineDelimitedFraming <: FramingMode end
+
+mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization,F<:FramingMode}
     pipe_in::IOIn
     pipe_out::IOOut
 
@@ -180,9 +207,11 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization}
     write_task::Union{Nothing,Task}
 
     serialization::S
+
+    framing::F
 end
 
-JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.StandardSerialization()) =
+JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.StandardSerialization(); framing::FramingMode=ContentLengthFraming()) =
     JSONRPCEndpoint(
         pipe_in,
         pipe_out,
@@ -196,7 +225,10 @@ JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.Standa
         status_idle,
         nothing,
         nothing,
-        serialization)
+        serialization,
+        framing)
+
+write_transport_layer(stream, response, ::ContentLengthFraming) = write_transport_layer(stream, response)
 
 function write_transport_layer(stream, response)
     response_utf8 = transcode(UInt8, response)
@@ -205,6 +237,15 @@ function write_transport_layer(stream, response)
     write(stream, response_utf8)
     flush(stream)
 end
+
+function write_transport_layer(stream, response, ::NewlineDelimitedFraming)
+    response_utf8 = transcode(UInt8, response)
+    write(stream, response_utf8)
+    write(stream, UInt8('\n'))
+    flush(stream)
+end
+
+read_transport_layer(stream, token::CancellationTokens.CancellationToken, ::ContentLengthFraming) = read_transport_layer(stream, token)
 
 function read_transport_layer(stream, token::CancellationTokens.CancellationToken)
     try
@@ -240,6 +281,8 @@ function read_transport_layer(stream, token::CancellationTokens.CancellationToke
     end
 end
 
+read_transport_layer(stream::Union{Sockets.TCPSocket,Sockets.PipeEndpoint}, token::CancellationTokens.CancellationToken, ::ContentLengthFraming) = read_transport_layer(stream, token)
+
 function read_transport_layer(stream::Union{Sockets.TCPSocket,Sockets.PipeEndpoint}, token::CancellationTokens.CancellationToken)
     try
         header_dict = Dict{String,String}()
@@ -274,6 +317,36 @@ function read_transport_layer(stream::Union{Sockets.TCPSocket,Sockets.PipeEndpoi
     end
 end
 
+function read_transport_layer(stream, token::CancellationTokens.CancellationToken, ::NewlineDelimitedFraming)
+    try
+        line = readline(stream)
+        if isempty(line)
+            return nothing
+        end
+        return line
+    catch err
+        if err isa Base.IOError
+            return nothing
+        end
+        rethrow(err)
+    end
+end
+
+function read_transport_layer(stream::Union{Sockets.TCPSocket,Sockets.PipeEndpoint}, token::CancellationTokens.CancellationToken, ::NewlineDelimitedFraming)
+    try
+        line = readline(stream, token)
+        if isempty(line)
+            return nothing
+        end
+        return line
+    catch err
+        if err isa Base.IOError
+            return nothing
+        end
+        rethrow(err)
+    end
+end
+
 Base.isopen(x::JSONRPCEndpoint) = x.status == status_running && isopen(x.pipe_in) && isopen(x.pipe_out)
 
 function start(x::JSONRPCEndpoint)
@@ -286,7 +359,7 @@ function start(x::JSONRPCEndpoint)
     x.write_task = @async try
         try
             for msg in x.out_msg_queue
-                write_transport_layer(x.pipe_out, msg)
+                write_transport_layer(x.pipe_out, msg, x.framing)
             end
         finally
             close(x.out_msg_queue)
@@ -311,7 +384,7 @@ function start(x::JSONRPCEndpoint)
                 end
 
                 # Now handle new messages
-                message = read_transport_layer(x.pipe_in, endpoint_token)
+                message = read_transport_layer(x.pipe_in, endpoint_token, x.framing)
 
                 if message === nothing
                     # EOF while there are outstanding requests and the endpoint wasn't
