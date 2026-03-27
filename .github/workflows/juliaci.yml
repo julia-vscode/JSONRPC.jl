@@ -14,10 +14,7 @@ jobs:
       include-release-versions: true
       include-rc-versions: true
       include-lts-versions: true
-      include-all-compatible-minor-versions: false
-      include-windows-x86: false
-      include-linux-x86: false
-      include-macos-x64: false
+      include-all-compatible-minor-versions: true
     permissions: write-all
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
