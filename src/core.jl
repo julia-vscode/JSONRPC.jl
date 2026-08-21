@@ -446,6 +446,18 @@ function start(x::JSONRPCEndpoint)
                 x.err === nothing && (x.err = TransportError("Write task IOError", err))
                 x.status = status_errored
             end
+        elseif !isopen(x.pipe_out)
+            # The pipe is gone, so this is a write to a broken pipe however it presented.
+            # Julia versions and platforms disagree about the type: 1.0 raises
+            # `ArgumentError` from `check_open` where later ones raise `IOError`. Test the
+            # pipe rather than the exception, exactly as the read task does for `pipe_in`.
+            # Without this, a clean `close()` landing while a write is still in flight
+            # records a transport error that never happened, and `send_request` reports it
+            # in place of "Endpoint closed".
+            if !CancellationTokens.is_cancellation_requested(endpoint_token)
+                x.err === nothing && (x.err = TransportError("Write task IOError", err))
+                x.status = status_errored
+            end
         else
             x.err === nothing && (x.err = TransportError("Write task failed", err))
             x.status = status_errored

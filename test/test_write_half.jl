@@ -116,3 +116,34 @@ end
         close(endpoint)
     end
 end
+
+@testitem "A clean close does not record a write error" begin
+    using CancellationTokens
+
+    # `close(endpoint)` cancels the endpoint token and drops the pipe, and that can land
+    # while a write is still in flight. It must not leave a `TransportError` behind:
+    # `send_request` reports `endpoint.err` in preference to "Endpoint closed", so a
+    # spurious one turns a clean shutdown into a bogus transport failure.
+    #
+    # A closed `IOBuffer` raises `ArgumentError` on write, which is the shape Julia 1.0
+    # produces for a closed stream (later versions raise `IOError` there). That is how this
+    # slipped past a guard that only looked for `IOError`, and using an `IOBuffer` here
+    # reproduces it on every version rather than only on the one that surfaced it.
+    pipe_in = Base.BufferStream()
+    pipe_out = IOBuffer()
+    close(pipe_out)
+
+    endpoint = JSONRPC.JSONRPCEndpoint(pipe_in, pipe_out)
+    JSONRPC.start(endpoint)
+
+    # Stand in for a `close(endpoint)` already under way.
+    CancellationTokens.cancel(endpoint.endpoint_cancellation_source)
+
+    JSONRPC.send_notification(endpoint, "somemethod", nothing)
+    wait(endpoint.write_task)
+
+    @test endpoint.err === nothing
+
+    close(pipe_in)
+    close(endpoint)
+end

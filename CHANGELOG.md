@@ -1,6 +1,7 @@
 # Version v3.0.2
 ## Bug fixes
 - A write task that fails now marks the endpoint `status_errored`, as the read task already did. Previously only `err` was recorded, so a connection whose outbound half had died still reported `isopen(endpoint) == true`, callers that guard their sends on `isopen` kept writing into it, and the `TransportError` describing the failure was never raised — the next send surfaced a bare `InvalidStateException` from the queue the dying write task had closed.
+- The write task no longer records a transport error when a clean `close` drops the pipe under an in-flight write. It only special-cased `Base.IOError`, but Julia 1.0 raises `ArgumentError` from `check_open` for a write to a closed stream, so the error landed in the unguarded branch — and because `send_request` reports `endpoint.err` in preference to "Endpoint closed", a clean shutdown surfaced as a bogus transport failure. It now tests `isopen(pipe_out)` rather than the exception type, mirroring what the read task already did for `pipe_in`.
 - `get_next_message` no longer leaks a cancellation registration onto each of its tokens per inbound message. It built a linked `CancellationTokenSource` per call, and a linked source's parent registrations are only released by closing them, which never happened — so closures accumulated for the life of the connection on lists that every later `readline`/`read`/`take!` on those tokens had to walk.
 
 ## New features
