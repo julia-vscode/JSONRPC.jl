@@ -1,3 +1,11 @@
+# Version v3.0.2
+## Bug fixes
+- A write task that fails now marks the endpoint `status_errored`, as the read task already did. Previously only `err` was recorded, so a connection whose outbound half had died still reported `isopen(endpoint) == true`, callers that guard their sends on `isopen` kept writing into it, and the `TransportError` describing the failure was never raised — the next send surfaced a bare `InvalidStateException` from the queue the dying write task had closed.
+- `get_next_message` no longer leaks a cancellation registration onto each of its tokens per inbound message. It built a linked `CancellationTokenSource` per call, and a linked source's parent registrations are only released by closing them, which never happened — so closures accumulated for the life of the connection on lists that every later `readline`/`read`/`take!` on those tokens had to walk.
+
+## New features
+- `outbound_backlog(endpoint)` reports `(queued, blocked_seconds)` for the outbound half. The outbound queue is unbounded, so a peer that stops reading never makes a send fail; the messages just accumulate undelivered. The endpoint now also warns once when a single transport write has been outstanding for more than a minute.
+
 # Version v3.0.0
 ## Breaking changes
 - `run(endpoint)` renamed to `start(endpoint)` — now exported as `JSONRPC.start`

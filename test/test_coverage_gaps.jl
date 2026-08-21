@@ -378,11 +378,17 @@ end
     sleep(0.5)
 
     @test istaskdone(ep.write_task)
-    # Endpoint still running (read task waiting on socket1)
-    @test ep.status == JSONRPC.status_running
+    # A write task that died takes the endpoint's status with it, so a caller cannot keep
+    # sending into a connection that can no longer deliver.
+    @test ep.status == JSONRPC.status_errored
+    @test_throws JSONRPC.TransportError flush(ep)
 
-    # flush: while isready → istaskdone → break
+    # flush: while isready → istaskdone → break. Only reachable when the write task dies
+    # *during* a flush, which is inherently racy to stage; the status is put back by hand to
+    # reach the branch deterministically.
+    ep.status = JSONRPC.status_running
     flush(ep)
+    ep.status = JSONRPC.status_errored
 
     close(socket1)
     close(ep)

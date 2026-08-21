@@ -209,6 +209,14 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization,F<:Frami
     serialization::S
 
     framing::F
+
+    # Observability for the outbound half. `write_started_at` is stamped before every
+    # transport write and cleared when it returns, so a peer that has stopped reading shows
+    # up as a long-outstanding write instead of as silence: the outbound queue is unbounded,
+    # so `send_notification` keeps succeeding and the messages simply pile up undelivered.
+    write_started_at::Union{Nothing,Float64}
+    write_stall_warned::Bool
+    write_monitor::Union{Nothing,Timer}
 end
 
 JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.StandardSerialization(); framing::FramingMode=ContentLengthFraming()) =
@@ -226,7 +234,10 @@ JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.Standa
         nothing,
         nothing,
         serialization,
-        framing)
+        framing,
+        nothing,
+        false,
+        nothing)
 
 write_transport_layer(stream, response, ::ContentLengthFraming) = write_transport_layer(stream, response)
 
@@ -349,6 +360,59 @@ end
 
 Base.isopen(x::JSONRPCEndpoint) = x.status == status_running && isopen(x.pipe_in) && isopen(x.pipe_out)
 
+# How often the monitor looks at the outbound half, and how long a single transport write
+# may be outstanding before it is worth a warning. Generous: a slow peer is normal, a peer
+# that has stopped reading altogether is not, and only the latter should be reported.
+const WRITE_STALL_CHECK_SECONDS = 15.0
+const WRITE_STALL_WARN_SECONDS = 60.0
+
+"""
+    outbound_backlog(x::JSONRPCEndpoint)
+
+How far behind the outbound half is: `(queued, blocked_seconds)`, where `queued` is the
+number of messages waiting to be written and `blocked_seconds` is how long the write
+currently in flight has been outstanding (`0.0` when none is).
+
+The outbound queue is unbounded, so a peer that stops reading its end never makes a send
+fail — the messages just accumulate, undelivered, with nothing to show for it. This is the
+one place that says so, and it stays meaningful after `close`.
+"""
+function outbound_backlog(x::JSONRPCEndpoint)
+    queued = try
+        Base.n_avail(x.out_msg_queue)
+    catch
+        # `n_avail` is internal; fall back to the buffer itself before giving up, so a
+        # future Julia that renames it degrades to a still-useful number rather than to 0.
+        try
+            length(x.out_msg_queue.data)
+        catch
+            0
+        end
+    end
+    started = x.write_started_at
+    return (queued=queued, blocked_seconds=started === nothing ? 0.0 : time() - started)
+end
+
+# A blocked write task cannot report itself — it is inside the write. Hence a timer, which
+# only ever warns once per stall and resets when writes start completing again.
+function _start_write_monitor(x::JSONRPCEndpoint)
+    return Timer(WRITE_STALL_CHECK_SECONDS; interval=WRITE_STALL_CHECK_SECONDS) do t
+        try
+            started = x.write_started_at
+            if started === nothing
+                x.write_stall_warned = false
+            elseif !x.write_stall_warned && time() - started >= WRITE_STALL_WARN_SECONDS
+                x.write_stall_warned = true
+                backlog = outbound_backlog(x)
+                @warn "JSON-RPC endpoint has been blocked writing to its peer; outgoing messages are queueing up and will not be delivered until the peer resumes reading" blocked_seconds = round(backlog.blocked_seconds, digits=1) queued_messages = backlog.queued
+            end
+        catch
+            # A monitor that throws would silently kill its own timer, and it is only ever
+            # advisory. Nothing here is worth taking down.
+        end
+    end
+end
+
 function start(x::JSONRPCEndpoint)
     x.status == status_idle || error("Endpoint is not idle.")
 
@@ -359,20 +423,36 @@ function start(x::JSONRPCEndpoint)
     x.write_task = @async try
         try
             for msg in x.out_msg_queue
-                write_transport_layer(x.pipe_out, msg, x.framing)
+                x.write_started_at = time()
+                try
+                    write_transport_layer(x.pipe_out, msg, x.framing)
+                finally
+                    x.write_started_at = nothing
+                end
             end
         finally
             close(x.out_msg_queue)
         end
     catch err
+        # `status` matters as much as `err` here. The read task sets `status_errored` on
+        # every failure path, but this one used to record `err` and leave the status alone —
+        # so a dead outbound half still reported `isopen(endpoint) == true`, callers that
+        # guard sends on `isopen` kept writing into it, and `check_dead_endpoint!` never
+        # raised the `TransportError` that says what actually went wrong. The next `put!`
+        # then hit the queue closed by the `finally` above and surfaced a bare
+        # `InvalidStateException` instead.
         if err isa Base.IOError
             if !CancellationTokens.is_cancellation_requested(endpoint_token)
                 x.err === nothing && (x.err = TransportError("Write task IOError", err))
+                x.status = status_errored
             end
         else
             x.err === nothing && (x.err = TransportError("Write task failed", err))
+            x.status = status_errored
         end
     end
+
+    x.write_monitor = _start_write_monitor(x)
 
     x.read_task = @async try
         try
@@ -611,12 +691,28 @@ function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,Cancel
     check_dead_endpoint!(endpoint)
 
     endpoint_token = CancellationTokens.get_token(endpoint.endpoint_cancellation_source)
-    wait_token = if token !== nothing
-        combined_source = CancellationTokens.CancellationTokenSource(token, endpoint_token)
-        CancellationTokens.get_token(combined_source)
-    else
-        endpoint_token
+
+    # Linked by hand rather than via `CancellationTokenSource(token, endpoint_token)`,
+    # because that constructor discards the registrations it makes on its parents, and a
+    # linked source's parent registrations are only ever dropped by closing them. One of
+    # these is built per inbound message, so the convenience constructor leaked two entries
+    # onto the caller's token and the endpoint token for every message the endpoint ever
+    # received: closures held alive for the life of the connection, on lists that
+    # `close(::CancellationTokenRegistration)` walks linearly, so every later
+    # `readline`/`read`/`take!` on those tokens paid for all of them. Keeping the
+    # registrations is what lets the `finally` below give them back.
+    combined_source = token === nothing ? nothing : CancellationTokens.CancellationTokenSource()
+    parent_registrations = CancellationTokens.CancellationTokenRegistration[]
+    if combined_source !== nothing
+        for parent in (token, endpoint_token)
+            push!(parent_registrations, CancellationTokens.register(parent) do
+                CancellationTokens.cancel(combined_source)
+            end)
+        end
     end
+
+    wait_token = combined_source === nothing ? endpoint_token : CancellationTokens.get_token(combined_source)
+
     try
         msg = take!(endpoint.in_msg_queue, wait_token)
         return msg
@@ -629,6 +725,10 @@ function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,Cancel
             throw(TransportError("Endpoint closed", nothing))
         else
             rethrow(err)
+        end
+    finally
+        for reg in parent_registrations
+            close(reg)
         end
     end
 end
@@ -679,6 +779,13 @@ end
 
 function Base.close(endpoint::JSONRPCEndpoint)
     endpoint.status == status_closed && return
+
+    # First, so that a write task wedged against an unresponsive peer — which the `fetch`
+    # below then waits on — cannot keep the timer alive after the endpoint is gone.
+    if endpoint.write_monitor !== nothing
+        try close(endpoint.write_monitor) catch end
+        endpoint.write_monitor = nothing
+    end
 
     # Signal the read task to stop — this unblocks any cancellation-aware reads
     # (TCPSocket/PipeEndpoint). For non-cancellation-aware streams, the caller
