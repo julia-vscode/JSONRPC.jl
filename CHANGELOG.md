@@ -1,3 +1,7 @@
+# Version v3.0.3
+## Bug fixes
+- `send_request` no longer leaks a cancellation registration onto each of its tokens per request. It is the same defect fixed in `get_next_message` in v3.0.2, in the second of the two places it occurred: a linked `CancellationTokenSource` built per call, whose parent registrations are only released by closing them. Only reachable when a `client_token` is passed, so it leaked per request rather than per inbound message.
+
 # Version v3.0.2
 ## Bug fixes
 - A write task that fails now marks the endpoint `status_errored`, as the read task already did. Previously only `err` was recorded, so a connection whose outbound half had died still reported `isopen(endpoint) == true`, callers that guard their sends on `isopen` kept writing into it, and the `TransportError` describing the failure was never raised — the next send surfaced a bare `InvalidStateException` from the queue the dying write task had closed.
