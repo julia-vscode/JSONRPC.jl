@@ -217,6 +217,12 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization,F<:Frami
     write_started_at::Union{Nothing,Float64}
     write_stall_warned::Bool
     write_monitor::Union{Nothing,Timer}
+    # `close` is idempotent, but it cannot decide that from `status`: the read task's
+    # `finally` sets `status_closed` on its own whenever the peer disconnects first.
+    # Guarding on the status made `close` return before it released the write monitor,
+    # the outbound queue and the write task — one leaked uv timer handle and one leaked
+    # task per endpoint whose peer went away first.
+    close_started::Bool
 end
 
 JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.StandardSerialization(); framing::FramingMode=ContentLengthFraming()) =
@@ -237,7 +243,8 @@ JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.Standa
         framing,
         nothing,
         false,
-        nothing)
+        nothing,
+        false)
 
 write_transport_layer(stream, response, ::ContentLengthFraming) = write_transport_layer(stream, response)
 
@@ -805,7 +812,8 @@ function send_error_response(endpoint, original_request::Request, @nospecialize(
 end
 
 function Base.close(endpoint::JSONRPCEndpoint)
-    endpoint.status == status_closed && return
+    endpoint.close_started && return
+    endpoint.close_started = true
 
     # First, so that a write task wedged against an unresponsive peer — which the `fetch`
     # below then waits on — cannot keep the timer alive after the endpoint is gone.

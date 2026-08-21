@@ -1,5 +1,6 @@
 # Version v3.0.3
 ## Bug fixes
+- `close(endpoint)` now releases the write-stall monitor timer, the outbound queue and the write task even when the peer disconnected first. It guarded its own idempotency on `status == status_closed`, but that status is also set by the read task's `finally` on a clean EOF, so `close` returned early on exactly the path where the peer had gone away — leaking a repeating `Timer` (a live libuv handle) plus a blocked write task per endpoint. Among other things this made precompilation hang for packages that exercise an endpoint pair in a `@compile_workload` ("waiting for IO to finish: timer ..."). `close` now tracks that it has run in a dedicated field.
 - `send_request` no longer leaks a cancellation registration onto each of its tokens per request. It is the same defect fixed in `get_next_message` in v3.0.2, in the second of the two places it occurred: a linked `CancellationTokenSource` built per call, whose parent registrations are only released by closing them. Only reachable when a `client_token` is passed, so it leaked per request rather than per inbound message.
 
 # Version v3.0.2
