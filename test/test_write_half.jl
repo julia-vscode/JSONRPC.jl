@@ -180,3 +180,55 @@ end
 
     close(pipe_out)
 end
+
+@testitem "send_request does not leak registrations onto its tokens" setup=[NamedPipes] begin
+    using CancellationTokens
+
+    # Same defect as the `get_next_message` one below/above: a linked source built per call,
+    # whose parent registrations are never given back. Only reachable when a `client_token` is
+    # passed, so it leaks per request rather than per inbound message — but it is the same bug.
+    socket1, socket2 = NamedPipes.get_named_pipe()
+
+    request_type = JSONRPC.RequestType("echo", Nothing, String)
+
+    server = JSONRPC.JSONRPCEndpoint(socket1, socket1)
+    client = JSONRPC.JSONRPCEndpoint(socket2, socket2)
+
+    msg_dispatcher = JSONRPC.MsgDispatcher()
+    msg_dispatcher[request_type] = (conn, params, token) -> "hello"
+
+    JSONRPC.start(server)
+    JSONRPC.start(client)
+
+    server_task = @async try
+        for msg in server
+            JSONRPC.dispatch_msg(server, msg_dispatcher, msg)
+        end
+    catch
+    end
+
+    client_source = CancellationTokens.CancellationTokenSource()
+    client_token = CancellationTokens.get_token(client_source)
+
+    # Reaching into CancellationTokens to count registrations is the only way to observe this;
+    # skip rather than fail if the field is ever renamed.
+    if isdefined(client_source, :_callbacks)
+        # One warm-up request first, so any one-off registrations are already in the baseline.
+        @test JSONRPC.send(client, request_type, nothing; client_token=client_token) == "hello"
+
+        baseline_client = length(client_source._callbacks)
+        baseline_endpoint = length(client.endpoint_cancellation_source._callbacks)
+
+        for i in 1:20
+            @test JSONRPC.send(client, request_type, nothing; client_token=client_token) == "hello"
+        end
+
+        @test length(client_source._callbacks) == baseline_client
+        @test length(client.endpoint_cancellation_source._callbacks) == baseline_endpoint
+    end
+
+    close(client)
+    close(socket2)
+    close(server)
+    close(socket1)
+end
