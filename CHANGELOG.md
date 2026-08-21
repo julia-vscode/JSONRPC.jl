@@ -1,3 +1,7 @@
+# Version v3.0.3
+## Bug fixes
+- `close(endpoint)` now releases the write-stall monitor timer, the outbound queue and the write task even when the peer disconnected first. It guarded its own idempotency on `status == status_closed`, but that status is also set by the read task's `finally` on a clean EOF, so `close` returned early on exactly the path where the peer had gone away — leaking a repeating `Timer` (a live libuv handle) plus a blocked write task per endpoint. Among other things this made precompilation hang for packages that exercise an endpoint pair in a `@compile_workload` ("waiting for IO to finish: timer ..."). `close` now tracks that it has run in a dedicated field.
+
 # Version v3.0.2
 ## Bug fixes
 - A write task that fails now marks the endpoint `status_errored`, as the read task already did. Previously only `err` was recorded, so a connection whose outbound half had died still reported `isopen(endpoint) == true`, callers that guard their sends on `isopen` kept writing into it, and the `TransportError` describing the failure was never raised — the next send surfaced a bare `InvalidStateException` from the queue the dying write task had closed.
