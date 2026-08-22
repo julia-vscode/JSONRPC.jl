@@ -721,7 +721,36 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
     end
 end
 
+"""
+Hand back a message the endpoint has already read off the wire, or `nothing` when it holds
+none.
+
+`in_msg_queue` is unbounded, so the read task runs as far ahead of whoever consumes the
+endpoint as the transport allows. When the peer disconnects, that task's `finally` cancels
+`endpoint_cancellation_source` and closes the queue in one go — and every message still
+sitting in it became unreachable, because both `check_dead_endpoint!` and the cancelled wait
+token report the endpoint dead without ever looking at what it is still holding. A peer that
+reports a result and then exits had that result thrown away, and the caller saw only the
+disconnect.
+"""
+function _take_buffered_message(endpoint::JSONRPCEndpoint)
+    isready(endpoint.in_msg_queue) || return nothing
+    return try
+        take!(endpoint.in_msg_queue)
+    catch err
+        # Raced with the channel closing empty; there is nothing buffered after all.
+        err isa InvalidStateException ? nothing : rethrow(err)
+    end
+end
+
 function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,CancellationTokens.CancellationToken}=nothing)
+    # Only on the way down: while the endpoint is running the ordinary blocking path below
+    # is what feeds the queue's consumer, and short-circuiting it here would change nothing
+    # except the fast path's cost.
+    if endpoint.status !== status_running
+        buffered = _take_buffered_message(endpoint)
+        buffered === nothing || return buffered
+    end
     check_dead_endpoint!(endpoint)
 
     endpoint_token = CancellationTokens.get_token(endpoint.endpoint_cancellation_source)
@@ -755,6 +784,10 @@ function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,Cancel
             if token !== nothing && CancellationTokens.is_cancellation_requested(token) && !CancellationTokens.is_cancellation_requested(endpoint_token)
                 throw(CancellationTokens.OperationCanceledException(token))
             end
+            # The read task's teardown can land between the drain above and this `take!`,
+            # so what it left behind is only visible from here.
+            buffered = _take_buffered_message(endpoint)
+            buffered === nothing || return buffered
             endpoint.err !== nothing && throw(endpoint.err)
             throw(TransportError("Endpoint closed", nothing))
         else
@@ -768,6 +801,13 @@ function get_next_message(endpoint::JSONRPCEndpoint; token::Union{Nothing,Cancel
 end
 
 function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
+    if endpoint.status !== status_running
+        buffered = _take_buffered_message(endpoint)
+        buffered === nothing || return buffered, nothing
+        # Drained. A peer that simply went away ends the iteration, which is the same
+        # answer the `catch` below gives when the close lands while it is waiting.
+        endpoint.status === status_closed && endpoint.err === nothing && return nothing
+    end
     check_dead_endpoint!(endpoint)
 
     endpoint_token = CancellationTokens.get_token(endpoint.endpoint_cancellation_source)
@@ -775,6 +815,8 @@ function Base.iterate(endpoint::JSONRPCEndpoint, state = nothing)
         return take!(endpoint.in_msg_queue, endpoint_token), nothing
     catch err
         if err isa InvalidStateException || err isa CancellationTokens.OperationCanceledException
+            buffered = _take_buffered_message(endpoint)
+            buffered === nothing || return buffered, nothing
             endpoint.err !== nothing && throw(endpoint.err)
             return nothing
         else
