@@ -17,3 +17,21 @@ jobs:
     permissions: write-all
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
+
+  json-compat:
+    name: JSON ${{ matrix.json-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        json-version: ["0.21", "1.7"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - name: Install and verify JSON version
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.add(PackageSpec(name="JSON", version="${{ matrix.json-version }}")); using JSON; @assert startswith(string(pkgversion(JSON)), "${{ matrix.json-version }}."); Pkg.status()'
+      - uses: julia-actions/julia-runtest@v1

@@ -1,16 +1,19 @@
 @testitem "Custom JSON serialization" setup=[NamedPipes] begin
     using JSON
-    using JSON: StructuralContext, begin_object, show_pair, end_object, show_json, Serializations.StandardSerialization
-
-    struct OurSerialization <: JSON.Serializations.CommonSerialization end
 
     struct OurStruct
         a::String
         b::String
     end
 
-    function JSON.show_json(io::StructuralContext, s::OurSerialization, f::OurStruct)
-        show_json(io, StandardSerialization(), "$(f.a):$(f.b)")
+    @static if isdefined(JSON, :JSONStyle)
+        struct OurSerialization <: JSON.JSONStyle end
+        JSON.StructUtils.lower(::OurSerialization, f::OurStruct) = "$(f.a):$(f.b)"
+    else
+        struct OurSerialization <: JSON.Serializations.CommonSerialization end
+        function JSON.show_json(io::JSON.StructuralContext, ::OurSerialization, f::OurStruct)
+            JSON.show_json(io, JSON.StandardSerialization(), "$(f.a):$(f.b)")
+        end
     end
 
     x = OurStruct("Hello", "World")

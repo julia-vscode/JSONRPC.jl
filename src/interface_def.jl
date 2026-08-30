@@ -1,24 +1,14 @@
 abstract type Outbound end
 
-function JSON.Writer.CompositeTypeWrapper(t::Outbound)
-    fns = collect(fieldnames(typeof(t)))
-    dels = Int[]
-    for i = 1:length(fns)
-        f = fns[i]
-        if getfield(t, f) isa Missing
-            push!(dels, i)
-        end
-    end
-    deleteat!(fns, dels)
-    JSON.Writer.CompositeTypeWrapper(t, Tuple(fns))
-end
-
 function JSON.lower(a::Outbound)
-    if nfields(a) > 0
-        JSON.Writer.CompositeTypeWrapper(a)
-    else
-        nothing
+    nfields(a) == 0 && return nothing
+
+    fields = Dict{String,Any}()
+    for field in fieldnames(typeof(a))
+        value = getfield(a, field)
+        ismissing(value) || (fields[string(field)] = value)
     end
+    return fields
 end
 
 function field_allows_missing(field::Expr)
@@ -60,7 +50,7 @@ macro dict_readable(arg)
         end
         ) : nothing)
 
-        function $tname(dict::Dict)
+        function $tname(dict::AbstractDict)
         end
     end
 
