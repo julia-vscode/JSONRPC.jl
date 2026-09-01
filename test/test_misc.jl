@@ -198,7 +198,11 @@ end
     using JSON
     buf = IOBuffer()
     ep = JSONRPC.JSONRPCEndpoint(buf, buf)
-    @test ep.serialization isa JSON.Serializations.StandardSerialization
+    @static if isdefined(JSON, :JSONStyle)
+        @test ep.serialization isa JSON.JSONWriteStyle
+    else
+        @test ep.serialization isa JSON.Serializations.StandardSerialization
+    end
     @test ep.status == JSONRPC.status_idle
     @test ep.err === nothing
     @test ep.read_task === nothing

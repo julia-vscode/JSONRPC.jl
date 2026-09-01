@@ -186,7 +186,7 @@ Used by the MCP (Model Context Protocol) stdio transport.
 """
 struct NewlineDelimitedFraming <: FramingMode end
 
-mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization,F<:FramingMode}
+mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSONSerialization,F<:FramingMode}
     pipe_in::IOIn
     pipe_out::IOOut
 
@@ -225,7 +225,7 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSON.Serialization,F<:Frami
     close_started::Bool
 end
 
-JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSON.Serialization=JSON.StandardSerialization(); framing::FramingMode=ContentLengthFraming()) =
+JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSONSerialization=DefaultJSONSerialization(); framing::FramingMode=ContentLengthFraming()) =
     JSONRPCEndpoint(
         pipe_in,
         pipe_out,
@@ -496,7 +496,7 @@ function start(x::JSONRPCEndpoint)
                 end
 
                 message_dict = try
-                    JSON.parse(message)
+                    _parse_json(message)
                 catch parse_err
                     # Corrupted/truncated message (e.g. remote process crashed mid-write).
                     # Treat as broken pipe and exit the read loop.
@@ -616,7 +616,7 @@ function send_notification(x::JSONRPCEndpoint, method::AbstractString, @nospecia
 
     message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
 
-    message_json = sprint(JSON.show_json, x.serialization, message)
+    message_json = _serialize_json(x.serialization, message)
 
     put!(x.out_msg_queue, message_json)
 
@@ -632,7 +632,7 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
     response_channel = Channel{Any}(1)
     x.outstanding_requests[id] = response_channel
 
-    message_json = sprint(JSON.show_json, x.serialization, message)
+    message_json = _serialize_json(x.serialization, message)
 
     put!(x.out_msg_queue, message_json)
 
@@ -834,7 +834,7 @@ function send_success_response(endpoint, original_request::Request, @nospecializ
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "result" => result)
 
-    response_json = sprint(JSON.show_json, endpoint.serialization, response)
+    response_json = _serialize_json(endpoint.serialization, response)
 
     put!(endpoint.out_msg_queue, response_json)
 end
@@ -848,7 +848,7 @@ function send_error_response(endpoint, original_request::Request, @nospecialize(
 
     response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "error" => Dict("code" => code, "message" => message, "data" => data))
 
-    response_json = sprint(JSON.show_json, endpoint.serialization, response)
+    response_json = _serialize_json(endpoint.serialization, response)
 
     put!(endpoint.out_msg_queue, response_json)
 end

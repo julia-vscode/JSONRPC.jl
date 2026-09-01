@@ -2,6 +2,7 @@ export JSONRPCEndpoint, TransportError, EndpointStatus, start, send_notification
 export FramingMode, ContentLengthFraming, NewlineDelimitedFraming
 
 include("pipenames.jl")
+include("jsoncompat.jl")
 include("core.jl")
 include("typed.jl")
 include("interface_def.jl")
@@ -9,7 +10,7 @@ include("interface_def.jl")
 function _precompile_()
     ccall(:jl_generating_output, Cint, ()) == 1 || return nothing
 
-    E = JSONRPCEndpoint{Base.PipeEndpoint, Base.PipeEndpoint, JSON.Serializations.StandardSerialization, ContentLengthFraming}
+    E = JSONRPCEndpoint{Base.PipeEndpoint, Base.PipeEndpoint, DefaultJSONSerialization, ContentLengthFraming}
     precompile(start, (E,))
     precompile(send_notification, (E, String, Any))
     precompile(send_request, (E, String, Any))
