@@ -27,7 +27,7 @@ jobs:
         json-version: ["0.21", "1.7"]
     steps:
       - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: "1"
       - uses: julia-actions/cache@v2
