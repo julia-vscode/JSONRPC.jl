@@ -11,14 +11,18 @@ name: Julia CI (JSON 0.20)
 
 on:
   push: {branches: [main,master]}
-  pull_request: {types: [opened,synchronize,reopened,ready_for_review,converted_to_draft]}
+  pull_request: {types: [opened,synchronize,reopened,ready_for_review,converted_to_draft,closed]}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
+  # Both jobs skip on a `closed` pull_request event: that event only exists to
+  # cancel the PR's queued and in-progress runs via the concurrency group
+  # above, the same opt-in the testitem-workflow template uses.
   compute-test-matrix:
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     outputs:
       test-matrix: ${{ steps.matrix.outputs.test-matrix }}
@@ -33,6 +37,7 @@ jobs:
           include-all-compatible-minor-versions: true
 
   test:
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     needs: compute-test-matrix
     strategy:
       fail-fast: false
