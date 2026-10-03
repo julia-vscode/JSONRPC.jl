@@ -14,7 +14,8 @@
     @test request.id === id
 
     ep.cancellation_sources[id] = JSONRPC.CancellationTokens.CancellationTokenSource()
-    @test only(keys(ep.cancellation_sources)) === id
+    @test collect(keys(ep.cancellation_sources)) == [id]
+    @test first(keys(ep.cancellation_sources)) === id
 
     put!(ep.no_longer_needed_cancellation_sources, id)
     @test take!(ep.no_longer_needed_cancellation_sources) === id
