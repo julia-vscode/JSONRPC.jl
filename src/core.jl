@@ -155,7 +155,7 @@ Enum representing the lifecycle state of a `JSONRPCEndpoint`.
 struct Request
     method::String
     params::Union{Nothing,Dict{String,Any},Vector{Any}}
-    id::Union{Nothing,String,Int}
+    id::Union{Nothing,String,Int64}
     token::Union{CancellationTokens.CancellationToken,Nothing}
 end
 
@@ -194,8 +194,8 @@ mutable struct JSONRPCEndpoint{IOIn<:IO,IOOut<:IO,S<:JSONSerialization,F<:Framin
     in_msg_queue::Channel{Request}
 
     outstanding_requests::Dict{String,Channel{Any}} # These are requests sent where we are waiting for a response
-    cancellation_sources::Dict{Union{String,Int},CancellationTokens.CancellationTokenSource} # These are the cancellation sources for requests that are not finished processing
-    no_longer_needed_cancellation_sources::Channel{Union{String,Int}}
+    cancellation_sources::Dict{Union{String,Int64},CancellationTokens.CancellationTokenSource} # These are the cancellation sources for requests that are not finished processing
+    no_longer_needed_cancellation_sources::Channel{Union{String,Int64}}
 
     endpoint_cancellation_source::CancellationTokens.CancellationTokenSource
 
@@ -232,8 +232,8 @@ JSONRPCEndpoint(pipe_in, pipe_out, serialization::JSONSerialization=DefaultJSONS
         Channel{Any}(Inf),
         Channel{Request}(Inf),
         Dict{String,Channel{Any}}(),
-        Dict{Union{String,Int},CancellationTokens.CancellationTokenSource}(),
-        Channel{Union{String,Int}}(Inf),
+        Dict{Union{String,Int64},CancellationTokens.CancellationTokenSource}(),
+        Channel{Union{String,Int64}}(Inf),
         CancellationTokens.CancellationTokenSource(),
         nothing,
         status_idle,
