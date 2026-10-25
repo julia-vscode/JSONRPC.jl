@@ -614,7 +614,8 @@ _is_valid(message_dict::AbstractDict) = get(message_dict, "jsonrpc", "") == "2.0
 function send_notification(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(params))
     check_dead_endpoint!(x)
 
-    message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params)
+    # An explicit `Pair{String,Any}`, because `=>` dispatches at runtime on an untyped value.
+    message = Dict{String,Any}("jsonrpc" => "2.0", "method" => method, Pair{String,Any}("params", params))
 
     message_json = _serialize_json(x.serialization, message)
 
@@ -627,7 +628,8 @@ function send_request(x::JSONRPCEndpoint, method::AbstractString, @nospecialize(
     check_dead_endpoint!(x)
 
     id = string(UUIDs.uuid4())
-    message = Dict("jsonrpc" => "2.0", "method" => method, "params" => params, "id" => id)
+    # An explicit `Pair{String,Any}`, because `=>` dispatches at runtime on an untyped value.
+    message = Dict{String,Any}("jsonrpc" => "2.0", "method" => method, Pair{String,Any}("params", params), "id" => id)
 
     response_channel = Channel{Any}(1)
     x.outstanding_requests[id] = response_channel
@@ -832,7 +834,8 @@ function send_success_response(endpoint, original_request::Request, @nospecializ
 
     put!(endpoint.no_longer_needed_cancellation_sources, original_request.id)
 
-    response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "result" => result)
+    # An explicit `Pair{String,Any}`, because `=>` dispatches at runtime on an untyped value.
+    response = Dict{String,Any}("jsonrpc" => "2.0", "id" => original_request.id, Pair{String,Any}("result", result))
 
     response_json = _serialize_json(endpoint.serialization, response)
 
@@ -846,7 +849,9 @@ function send_error_response(endpoint, original_request::Request, @nospecialize(
 
     put!(endpoint.no_longer_needed_cancellation_sources, original_request.id)
 
-    response = Dict("jsonrpc" => "2.0", "id" => original_request.id, "error" => Dict("code" => code, "message" => message, "data" => data))
+    # Explicit `Pair{String,Any}`s, because `=>` dispatches at runtime on an untyped value.
+    error_object = Dict{String,Any}(Pair{String,Any}("code", code), Pair{String,Any}("message", message), Pair{String,Any}("data", data))
+    response = Dict{String,Any}("jsonrpc" => "2.0", "id" => original_request.id, "error" => error_object)
 
     response_json = _serialize_json(endpoint.serialization, response)
 

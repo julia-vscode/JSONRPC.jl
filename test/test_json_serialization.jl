@@ -74,3 +74,30 @@
     @test msg2.params == ["Hello:World"]
     @test msg3.params == ["Hello:World"]
 end
+
+@testitem "Sending does not dispatch on the type of the payload" begin
+    # Checks compiler output, verified on Julia 1.6 and later.
+    if VERSION >= v"1.6"
+        function dynamic_callees(f, types)
+            callees = Any[]
+            for stmt in code_typed(f, types)[1].first.code
+                if stmt isa Expr && stmt.head === :call
+                    callee = stmt.args[1]
+                    callee isa GlobalRef && (callee = getfield(callee.mod, callee.name))
+                    callee isa Core.Builtin || push!(callees, callee)
+                end
+            end
+            return callees
+        end
+        builds_message(callee) = callee isa Type && (callee <: Pair || callee <: AbstractDict) || callee === JSONRPC._serialize_json
+
+        E = JSONRPCEndpoint{Base.PipeEndpoint, Base.PipeEndpoint, JSONRPC.DefaultJSONSerialization, JSONRPC.ContentLengthFraming}
+        send_request_body = Base.bodyfunction(which(send_request, (E, String, Any)))
+        for (f, types) in [(send_notification, (E, String, Any)),
+                           (send_request_body, (Nothing, Nothing, typeof(send_request), E, String, Any)),
+                           (send_success_response, (E, JSONRPC.Request, Any)),
+                           (send_error_response, (E, JSONRPC.Request, Any, Any, Any))]
+            @test isempty(filter(builds_message, dynamic_callees(f, types)))
+        end
+    end
+end
